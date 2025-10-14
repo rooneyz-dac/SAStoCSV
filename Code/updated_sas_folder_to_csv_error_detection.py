@@ -1,8 +1,3 @@
-# Updated Script with Positional Input and Dynamic Output Directory
-# Precedence: positional input > --input-dir > global INPUT_DIR
-# Output defaults to <parent_of_input>/DAC_CSV unless --output-dir is provided
-
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -29,15 +24,12 @@ APPLY_VALUE_LABELS = True
 SAS_CATALOG_DIR = r"C:\data\catalogs"  # or point SAS_CATALOG_FILE to a single .sas7bcat
 """
 
-
-
 # ==== CONFIGURATION (EDIT THESE) ==============================================
 INPUT_DIR = r"C:\Users\rooneyz\Documents\TestData\MirumTestData"   # ← change this
 OUTPUT_DIR = r"\output"      # ← and this
 
-# Recursion & performance
+# Recursion & basic behavior
 RECURSIVE = True             # traverse subfolders
-CHUNKSIZE = None             # e.g., 250000 for big files, or None to read all rows
 
 # CSV formatting
 NA_REP = ""                  # value to write for missing values in CSV
@@ -47,7 +39,7 @@ ENCODING = None              # rarely needed; pyreadstat auto-detects (e.g., "la
 APPLY_VALUE_LABELS = False   # True to replace codes using SAS formats via catalog(s)
 SAS_CATALOG_FILE = None      # e.g., r"C:\path\to\formats.sas7bcat" (single catalog)
 SAS_CATALOG_DIR  = r"FilePath"      # e.g., r"C:\path\to\catalogs" (auto-match by file stem)
-SAS_FORMATS_AS_CATEGORY = True           # labeled columns become pandas categoricals
+SAS_FORMATS_AS_CATEGORY = False           # labeled columns become pandas categoricals
 SAS_FORMATS_AS_ORDERED = False           # ordered categorical for formats with order
 
 # Error report
@@ -264,18 +256,17 @@ def convert_one_sas(
     out_meta_path: Path,
     apply_value_labels: bool = False,
     na_rep: str = "",
-    chunksize: Optional[int] = None,
     encoding: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Optional[pd.DataFrame]]:
     """
     Convert one SAS7BDAT to CSV and write per-dataset JSON metadata.
+    Always reads the entire dataset in a single call to pyreadstat.
     Returns: (metadata_dict, df_sample) where df_sample is a small head for dtype reporting.
     """
     ensure_parent_dir(out_csv_path)
     ensure_parent_dir(out_meta_path)
 
     df_sample: Optional[pd.DataFrame] = None
-    meta_first = None
 
     read_kwargs = {
         "dates_as_pandas_datetime": True,
@@ -299,48 +290,12 @@ def convert_one_sas(
         else:
             print("  (info) No .sas7bcat catalog found for labels; proceeding without applying formats.")
 
-    if chunksize and chunksize > 0:
-        offset = 0
-        first = True
-        while True:
-            df, meta = pyreadstat.read_sas7bdat(
-                str(in_path),
-                row_offset=offset,
-                row_limit=chunksize,
-                **read_kwargs
-            )
-            if meta_first is None:
-                meta_first = meta
-                df_sample = df.head(50).copy()
+    # Read entire file at once
+    df, meta = pyreadstat.read_sas7bdat(str(in_path), **read_kwargs)
+    df_sample = df.head(50).copy()
+    df.to_csv(out_csv_path, index=False, na_rep=na_rep)
 
-            if df.empty:
-                break
-
-            df.to_csv(
-                out_csv_path,
-                mode="w" if first else "a",
-                index=False,
-                header=first,
-                na_rep=na_rep,
-            )
-            written_rows = len(df)
-            offset += written_rows
-            first = False
-            # Encourage GC to drop chunk memory before next read
-            del df
-            import gc
-            gc.collect()
-
-            print(f"  wrote {written_rows} rows (offset={offset}) for {in_path.name}")
-            if written_rows < chunksize:
-                break
-    else:
-        df, meta = pyreadstat.read_sas7bdat(str(in_path), **read_kwargs)
-        meta_first = meta
-        df_sample = df.head(50).copy()
-        df.to_csv(out_csv_path, index=False, na_rep=na_rep)
-
-    meta_dict = extract_meta_dict(meta_first)
+    meta_dict = extract_meta_dict(meta)
     write_json(out_meta_path, meta_dict)
     return meta_dict, df_sample
 
@@ -383,7 +338,6 @@ def main():
     print(f"  INPUT_DIR               = {in_dir}")
     print(f"  OUTPUT_DIR              = {out_dir}")
     print(f"  RECURSIVE               = {RECURSIVE}")
-    print(f"  CHUNKSIZE               = {CHUNKSIZE}")
     print(f"  NA_REP                  = {repr(NA_REP)}")
     print(f"  ENCODING                = {ENCODING}")
     print(f"  APPLY_VALUE_LABELS      = {APPLY_VALUE_LABELS}")
@@ -427,7 +381,6 @@ def main():
                 out_meta_path=out_meta,
                 apply_value_labels=APPLY_VALUE_LABELS,
                 na_rep=NA_REP,
-                chunksize=CHUNKSIZE,
                 encoding=ENCODING,
             )
         except Exception as ex:
