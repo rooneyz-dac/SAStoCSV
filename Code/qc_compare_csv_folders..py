@@ -1,9 +1,8 @@
-# python
 #!/usr/bin/env python3
 # QC compare CSV folder trees: expected vs actual
 # Edit the three paths below or override them via CLI args.
 # Usage (example):
-#   py -3 qc_compare_csv_folders.py -e C:\expected_csvs -a C:\actual_csvs -o C:\qc_report --recursive --numeric-tolerance 1e-6
+#   py -3 qc_compare_csv_folders.py -e `C:\expected_csvs` -a `C:\actual_csvs` -o `C:\qc_report` --recursive --numeric-tolerance 1e-6
 
 # ======= TOP-LEVEL PATH CONFIGURATION (EDIT THESE) ===========================
 EXPECTED_DIR = r"C:\Users\rooneyz\Documents\expected_csvs"
@@ -99,13 +98,17 @@ def compare_dataframes(expected: pd.DataFrame,
             indices = np.nonzero(col_mismatch_mask)[0]
             mismatch_cells += len(indices)
             for i in indices:
-                mismatch_rows_set.add(int(i))
+                pandas_row = int(i)
+                mismatch_rows_set.add(pandas_row)
                 if len(mismatch_details) < max_diff_rows:
+                    # map pandas 0-based data row -> CSV file line (header = line 1)
+                    file_line = pandas_row + 2
                     mismatch_details.append({
-                        "row_index": int(i),
+                        "row_index": file_line,     # human-friendly CSV file line number
+                        "pandas_row": pandas_row,   # pandas 0-based row index
                         "column": col,
-                        "expected": safe_value(ecol.iat[i]),
-                        "actual": safe_value(acol.iat[i])
+                        "expected": safe_value(ecol.iat[pandas_row]),
+                        "actual": safe_value(acol.iat[pandas_row])
                     })
 
     n_mismatch_rows = len(mismatch_rows_set)
@@ -129,11 +132,13 @@ def compare_dataframes(expected: pd.DataFrame,
 
 def write_per_file_diff_csv(out_csv: Path, mismatches: List[Dict[str, Any]]):
     out_csv.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["row_index", "pandas_row", "column", "expected", "actual"]
     with out_csv.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["row_index", "column", "expected", "actual"])
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in mismatches:
-            writer.writerow(row)
+            out = {k: row.get(k, "") for k in fieldnames}
+            writer.writerow(out)
 
 def _sanitize_sheet_name(name: str) -> str:
     # remove invalid excel sheet chars and limit length to 31
@@ -174,7 +179,7 @@ def write_excel_from_reports(reports_dir: Path, excel_path: Path):
         df_summary = pd.DataFrame(summary_rows)
         df_summary.to_excel(writer, sheet_name="summary", index=False)
 
-        # Create one sheet per report: metrics (key/value) then mismatch table (if any)
+        # One sheet per report: metrics then mismatch samples (if any)
         for r in reports:
             rel = r.get("relative_path", "unknown")
             metrics = r.get("metrics", {}) or {}
@@ -187,19 +192,14 @@ def write_excel_from_reports(reports_dir: Path, excel_path: Path):
                 sheet_name = (base[:27] + f"_{idx}") if len(base) > 27 else f"{base}_{idx}"
                 idx += 1
 
-            # Metrics as two-column table
             metric_rows = []
             for k in sorted(metrics.keys()):
                 v = metrics[k]
-                if isinstance(v, (dict, list)):
-                    val = json.dumps(v, ensure_ascii=False)
-                else:
-                    val = v
+                val = json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v
                 metric_rows.append({"metric": k, "value": val})
             df_metrics = pd.DataFrame(metric_rows)
             df_metrics.to_excel(writer, sheet_name=sheet_name, index=False, startrow=0)
 
-            # Mismatch samples (if present) placed below metrics
             df_mismatches = pd.DataFrame(mismatches)
             if not df_mismatches.empty:
                 startrow = len(df_metrics) + 2
@@ -207,9 +207,9 @@ def write_excel_from_reports(reports_dir: Path, excel_path: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="QC compare two folders of CSVs.")
-    parser.add_argument("-e", "--expected-dir", required=False, help="Path to expected CSV folder (overrides top-of-file EXPECTED_DIR)")
-    parser.add_argument("-a", "--actual-dir", required=False, help="Path to actual CSV folder (overrides top-of-file ACTUAL_DIR)")
-    parser.add_argument("-o", "--output-dir", required=False, help="Path to write QC reports (overrides top-of-file OUTPUT_DIR)")
+    parser.add_argument("-e", "--expected-dir", required=False, help="Path to expected CSV folder (overrides top-of-file `EXPECTED_DIR`)")
+    parser.add_argument("-a", "--actual-dir", required=False, help="Path to actual CSV folder (overrides top-of-file `ACTUAL_DIR`)")
+    parser.add_argument("-o", "--output-dir", required=False, help="Path to write QC reports (overrides top-of-file `OUTPUT_DIR`)")
     parser.add_argument("--recursive", action="store_true", help="Traverse subfolders")
     parser.add_argument("--numeric-tolerance", type=float, default=0.0, help="Absolute tolerance for numeric comparisons")
     parser.add_argument("--max-diff-rows", type=int, default=200, help="Maximum per-file mismatch rows to record")
@@ -329,8 +329,22 @@ def main():
         combined_reports.append(report)
         print(f"[{status.upper()}] {rel_print}: mismatched_rows={comp['n_mismatch_rows']} mismatched_cells={comp['n_mismatch_cells']}")
 
-    df_summary = pd.DataFrame(summary_rows)
-    df_summary.to_csv(out_root / "qc_summary.csv", index=False)
+    # ensure summary CSV always has a header and is written (even if no rows)
+    summary_columns = [
+        "relative_path",
+        "status",
+        "expected_rows",
+        "actual_rows",
+        "common_rows_compared",
+        "extra_rows_expected",
+        "extra_rows_actual",
+        "n_mismatch_rows",
+        "n_mismatch_cells",
+    ]
+    df_summary = pd.DataFrame(summary_rows, columns=summary_columns)
+    summary_path = out_root / "qc_summary.csv"
+    df_summary.to_csv(str(summary_path), index=False)
+    print(f"- Summary CSV written to `{summary_path}` (rows: {len(df_summary)})")
 
     with (out_root / "qc_combined_reports.json").open("w", encoding="utf-8") as f:
         json.dump({"generated_at": datetime.utcnow().isoformat(), "reports": combined_reports}, f, indent=2, ensure_ascii=False)
@@ -342,7 +356,7 @@ def main():
         print(f"Failed to write Excel workbook: {ex}", file=sys.stderr)
 
     print("\nQC complete.")
-    print(f"- Summary CSV: `{out_root / 'qc_summary.csv'}`")
+    print(f"- Summary CSV: `{summary_path}`")
     print(f"- Per-file JSON reports: `{reports_dir}`")
     print(f"- Per-file diffs (some files): `{diffs_dir}`")
     print(f"- Combined JSON: `{out_root / 'qc_combined_reports.json'}`")
