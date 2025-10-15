@@ -97,18 +97,36 @@ def compare_dataframes(expected: pd.DataFrame,
 
             indices = np.nonzero(col_mismatch_mask)[0]
             mismatch_cells += len(indices)
+            expected_dtype_str = str(ecol.dtype)
+            actual_dtype_str = str(acol.dtype)
             for i in indices:
                 pandas_row = int(i)
                 mismatch_rows_set.add(pandas_row)
                 if len(mismatch_details) < max_diff_rows:
                     # map pandas 0-based data row -> CSV file line (header = line 1)
                     file_line = pandas_row + 2
+
+                    # determine reason
+                    if is_numeric_series(ecol) and is_numeric_series(acol):
+                        if nan_mismatch[i]:
+                            reason = "nan_mismatch"
+                        elif finite_mask[i] and diff[i]:
+                            reason = "numeric_diff"
+                        else:
+                            reason = "value_mismatch"
+                    else:
+                        if expected_dtype_str != actual_dtype_str:
+                            reason = "dtype_mismatch"
+                        else:
+                            reason = "string_mismatch"
+
                     mismatch_details.append({
                         "row_index": file_line,     # human-friendly CSV file line number
                         "pandas_row": pandas_row,   # pandas 0-based row index
                         "column": col,
                         "expected": safe_value(ecol.iat[pandas_row]),
-                        "actual": safe_value(acol.iat[pandas_row])
+                        "actual": safe_value(acol.iat[pandas_row]),
+                        "reason": reason
                     })
 
     n_mismatch_rows = len(mismatch_rows_set)
@@ -132,7 +150,7 @@ def compare_dataframes(expected: pd.DataFrame,
 
 def write_per_file_diff_csv(out_csv: Path, mismatches: List[Dict[str, Any]]):
     out_csv.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["row_index", "pandas_row", "column", "expected", "actual"]
+    fieldnames = ["row_index", "pandas_row", "column", "expected", "actual", "reason"]
     with out_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
