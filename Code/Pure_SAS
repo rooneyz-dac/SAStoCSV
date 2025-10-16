@@ -1,0 +1,62 @@
+sas
+%macro convert_dir(input_path);
+  %let inpath = %sysfunc(strip(&input_path));
+
+  /* compute parent directory */
+  data _null_;
+    length p r parent $1024;
+    p = symget('inpath');
+    r = reverse(p);
+    posrev = indexc(r,'\/');
+    if posrev > 0 then pos = length(p) - posrev + 1;
+    else pos = 0;
+    if pos > 0 then parent = substr(p,1,pos-1);
+    else parent = p;
+    call symputx('parentdir', parent, 'G');
+  run;
+
+  /* output folder under the parent directory: parent\output\DAC_CSV */
+  %let outdir = &parentdir.\output\DAC_CSV;
+
+  /* create output directory if it does not exist */
+  %let _rc = %sysfunc(filename(_tmp,&outdir));
+  %let _mkdir_rc = %sysfunc(mkdir(&outdir));
+  %let _fn_rc = %sysfunc(filename(_tmp));
+
+  /* assign libref to input folder */
+  libname inlib "&inpath";
+
+  /* collect dataset names from the lib */
+  proc sql noprint;
+    select memname
+    into :ds1 - :ds9999
+    from dictionary.tables
+    where libname = 'INLIB' and memtype = 'DATA';
+    %let ds_count = &sqlobs;
+  quit;
+
+  %if &ds_count = 0 %then %do;
+    %put NOTE: No SAS datasets found in &inpath;
+  %end;
+  %else %do;
+    %put NOTE: Found &ds_count dataset(s) in &inpath. Exporting to &outdir;
+    %do i = 1 %to &ds_count;
+      %let ds = &&ds&i;
+      %put NOTE: Exporting dataset =&ds to &outdir\&ds..csv;
+      proc export data=inlib."&ds"n
+          outfile="&outdir\&ds..csv"
+          dbms=csv
+          replace;
+        putnames = yes;
+      run;
+    %end;
+  %end;
+
+  /* clear libref */
+  libname inlib clear;
+%mend convert_dir;
+
+/* Example usage:
+   %convert_dir(C:\path\to\your\folder)
+   This will create: C:\path\to\your\output\DAC_CSV\*.csv
+*/
