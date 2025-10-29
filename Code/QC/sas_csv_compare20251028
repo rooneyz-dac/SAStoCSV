@@ -1,0 +1,232 @@
+sas
+/* language: sas */
+options mprint mlogic symbolgen;
+
+%macro compare_csv_dirs(expected=, actual=, outdir=, recursive=NO);
+  %local epipe apipe epswitch apswitch xlsxpath;
+
+  %if %sysfunc(fileexist(&outdir)) = 0 %then %sysfunc(dmkdir(&outdir));
+
+  %let xlsxpath = %sysfunc(pathname(work))\qc_reports.xlsx;
+  /* prefer writing workbook into the provided outdir */
+  %let xlsxpath = &outdir.\qc_reports.xlsx;
+
+  /* Build OS DIR command flags */
+  %if %upcase(&recursive) = YES %then %do;
+    %let epswitch = /s;
+    %let apswitch = /s;
+  %end;
+  %else %do;
+    %let epswitch = ;
+    %let apswitch = ;
+  %end;
+
+  /* List expected CSVs (full paths). Use DIR /B /A-D (/S for recursion) */
+  filename epipe pipe "dir ""&expected"" &epswitch /b /a-d 2>nul";
+  data exp_files (keep=fullpath relpath);
+    length fullpath $32767 relpath $32767;
+    infile epipe lrecl=32767 truncover;
+    input fullpath $char32767.;
+    if missing(fullpath) then delete;
+    /* compute relative path */
+    relpath = prxchange('s{\Q&expected\E}{ }i', -1, fullpath);
+    relpath = left(relpath);
+    if substr(relpath,1,1) = '\' then relpath = substr(relpath,2);
+    relpath = translate(relpath,'/','\'); /* normalize to forward/backslash uniformity not required */
+    relpath = lowcase(relpath);
+  run;
+
+  /* List actual CSVs */
+  filename apipe pipe "dir ""&actual"" &apswitch /b /a-d 2>nul";
+  data act_files (keep=fullpath relpath);
+    length fullpath $32767 relpath $32767;
+    infile apipe lrecl=32767 truncover;
+    input fullpath $char32767.;
+    if missing(fullpath) then delete;
+    relpath = prxchange('s{\Q&actual\E}{ }i', -1, fullpath);
+    relpath = left(relpath);
+    if substr(relpath,1,1) = '\' then relpath = substr(relpath,2);
+    relpath = translate(relpath,'/','\');
+    relpath = lowcase(relpath);
+  run;
+
+  /* Create combined map of files */
+  proc sql;
+    create table file_map as
+    select coalescec(a.relpath,b.relpath) as relpath,
+           a.fullpath as expected_full,
+           b.fullpath as actual_full
+    from exp_files as a
+    full join act_files as b
+    on a.relpath = b.relpath
+    order by relpath;
+  quit;
+
+  /* Prepare summary container */
+  data summary;
+    length relative_path $1024 status $32 message $1024;
+    format expected_rows actual_rows common_rows_compared extra_expected extra_actual n_mismatch_rows n_mismatch_cells 8.;
+    call missing(of _all_);
+    stop;
+  run;
+
+  /* Prepare temporary library for per-file imported tables */
+  libname qcwork work;
+
+  /* Iterate over the map and compare files */
+  data _null_;
+    set file_map;
+    call symputx('relpath', relpath);
+    call symputx('expfull', expected_full);
+    call symputx('actfull', actual_full);
+    /* create safe SAS dataset names - limit to 32 and keep letters/numbers/_ */
+    safe = prxchange('s/[^0-9A-Za-z_]+/_/i', -1, relpath);
+    /* ensure starts with letter */
+    if prxmatch('/^[0-9]/', safe) then safe = cats('F_', safe);
+    safe = substr(safe,1,30);
+    call symputx('safename', safe);
+    /* call execute for per-file processing macro */
+    if missing(expfull) then do;
+      call execute('%nrstr(%process_file_missing)(' || cats("&relpath") || ',missing_in_expected,' || cats('"', "&actfull", '")') || ');');
+    end;
+    else if missing(actfull) then do;
+      call execute('%nrstr(%process_file_missing)(' || cats("&relpath") || ',missing_in_actual,' || cats('"', "&expfull", '")') || ');');
+    end;
+    else do;
+      call execute('%nrstr(%process_pair)(' || cats("&relpath") || ',' ||
+                   cats('"',trim("&expfull"),'","',trim("&actfull"),'","',trim("&safename"),'")') || ');');
+    end;
+  run;
+
+  /* macro to record a missing/extra file */
+  %macro process_file_missing(rel, status, path);
+    data _null_;
+      length relpath $1024 msg $1024;
+      relpath = symget('rel');
+      status = "%upcase(&status)";
+      if status = "MISSING_IN_ACTUAL" then msg = cats("File present in expected only: ", symget('path'));
+      else if status = "MISSING_IN_EXPECTED" then msg = cats("File present in actual only: ", symget('path'));
+      else msg = "";
+      call execute('data summary; length relative_path $1024 status $32 message $1024; relative_path="'||trim(relpath)||'"; status="'||trim(status)||'"; message="'||trim(msg)||'"; expected_rows=.; actual_rows=.; common_rows_compared=.; extra_expected=.; extra_actual=.; n_mismatch_rows=.; n_mismatch_cells=.; output; run; proc append base=work.summary data=summary force; run;');
+    run;
+  %mend process_file_missing;
+
+  /* macro to import pair and compare using PROC COMPARE */
+  %macro process_pair(rel, expfull, actfull, safename);
+    %let ds_exp = exp_&safename;
+    %let ds_act = act_&safename;
+    %let ds_cmp = cmp_&safename;
+    %let ds_diff = diff_&safename;
+
+    /* Import expected */
+    proc import datafile="&expfull"
+      out=work.&ds_exp
+      dbms=csv replace;
+      guessingrows=max;
+      getnames=yes;
+    run;
+
+    /* Import actual */
+    proc import datafile="&actfull"
+      out=work.&ds_act
+      dbms=csv replace;
+      guessingrows=max;
+      getnames=yes;
+    run;
+
+    /* Capture row counts and column metadata */
+    proc sql noprint;
+      select count(*) into :exp_rows from work.&ds_exp;
+      select count(*) into :act_rows from work.&ds_act;
+    quit;
+
+    proc contents data=work.&ds_exp out=meta_exp(keep=name type length) noprint; run;
+    proc contents data=work.&ds_act out=meta_act(keep=name type length) noprint; run;
+
+    /* Check column sets and variable-level dtypes */
+    proc sql noprint;
+      select name into :exp_vars separated by '|' from meta_exp;
+      select name into :act_vars separated by '|' from meta_act;
+    quit;
+
+    /* Run PROC COMPARE to find detailed diffs */
+    proc compare base=work.&ds_exp compare=work.&ds_act
+      out=work.&ds_diff outnoequal outbase outcompare outdif noprint;
+    run;
+
+    /* Count mismatches from PROC COMPARE OUT= dataset.  _TYPE_='DIFF' rows indicate cell differences */
+    proc sql noprint;
+      select count(*) into :n_diff_cells from work.&ds_diff where upcase(_TYPE_) = 'DIFF' or upcase(_TYPE_)='D';
+      /* unique observation indices with differences */
+      select count(distinct _OBS_) into :n_diff_rows from work.&ds_diff where upcase(_TYPE_) = 'DIFF' or upcase(_TYPE_)='D' ;
+    quit;
+
+    /* Save the detailed diff dataset under a name we can export later */
+    data work.&ds_cmp;
+      length relative_path $1024;
+      relative_path = symget('rel');
+      set work.&ds_diff;
+    run;
+
+    /* Build a per-file summary row and append to summary dataset */
+    data summary_row;
+      length relative_path $1024 status $32 message $1024;
+      relative_path = symget('rel');
+      expected_rows = input(symget('exp_rows'), 8.);
+      actual_rows = input(symget('act_rows'), 8.);
+      common_rows_compared = min(expected_rows, actual_rows);
+      extra_expected = max(0, expected_rows - actual_rows);
+      extra_actual = max(0, actual_rows - expected_rows);
+      n_mismatch_rows = input(symget('n_diff_rows'), 8.);
+      n_mismatch_cells = input(symget('n_diff_cells'), 8.);
+      /* determine pass/fail: any diffs or extra rows => fail */
+      if n_mismatch_rows > 0 or extra_expected > 0 or extra_actual > 0 then status='FAIL'; else status='PASS';
+      message = '';
+      output;
+    run;
+
+    proc append base=work.summary data=summary_row force; run;
+
+  %mend process_pair;
+
+  /* At this point all per-file diff tables named cmp_* and diff_* exist in WORK.
+     Write Summary + detailed sheets into a single Excel workbook using LIBNAME XLSX.
+  */
+
+  libname outxlsx xlsx "&xlsxpath";
+
+  /* Write summary sheet */
+  data outxlsx.Summary;
+    set work.summary;
+  run;
+
+  /* Export each comparison details dataset into its own sheet */
+  proc sql noprint;
+    /* list all work datasets starting with cmp_ or diff_ */
+    select memname into :dslist separated by ' ' from dictionary.tables
+      where libname='WORK' and lowcase(memname) like 'cmp_%';
+  quit;
+
+  %let nds = %sysfunc(countw(&dslist, %str( )));
+
+  %do i=1 %to &nds;
+    %let ds = %scan(&dslist, &i, %str( ));
+    /* build sheet name from dataset name (strip prefix) */
+    %let sheet = %substr(&ds,5);
+    /* sanitize sheet name length */
+    %let sheet = %substr(&sheet,1,30);
+    /* copy dataset into workbook as a sheet */
+    data outxlsx."&sheet"n;
+      set work.&ds;
+    run;
+  %end;
+
+  libname outxlsx clear;
+
+  %put NOTE: QC report written to &xlsxpath;
+
+%mend compare_csv_dirs;
+
+/* Example usage:
+   %compare_csv_dirs(expected=C:\path\to\expected, actual=C:\path\to\actual, outdir=C:\path\to\out, recursive=YES);
+*/
