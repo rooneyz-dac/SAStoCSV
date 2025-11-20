@@ -1,0 +1,90 @@
+/* Get CLI args: expecting lib_path[,dummy_out_dir][,replace_opt] */
+%let args       = %sysfunc(getoption(sysparm));
+%let lib_path   = %scan(&args, 1, %str(,));
+%let _dummy_out = %scan(&args, 2, %str(,));
+%let replace_opt= %scan(&args, 3, %str(,));
+
+/* Defaults if not provided */
+%if &lib_path = %then %let lib_path = C:\data;
+%if &replace_opt = %then %let replace_opt = YES;
+
+/* Derive parent directory and DAC_CSV output dir */
+%let path_len = %length(&lib_path);
+%let last_slash_pos = %sysfunc(findc(&lib_path, %str(\), -&path_len));  /* search from end */
+
+/* Parent directory, e.g. C:\parent if lib_path=C:\parent\child */
+%let parent_dir = %substr(&lib_path, 1, %eval(&last_slash_pos - 1));
+
+/* Output directory: parent\DAC_CSV */
+%let out_dir = &parent_dir.\DAC_CSV;
+
+%macro export_lib_from_path(libpath=, outdir=, replace=YES);
+  /* Check if input directory exists */
+  %if %sysfunc(fileexist(&libpath)) = 0 %then %do;
+    %put ERROR: Input directory &libpath does not exist;
+    %return;
+  %end;
+
+  /* Create library from directory path (for .sas7bdat datasets) */
+  libname TEMPLIB "&libpath";
+
+  /* Check if library was created successfully */
+  %if %sysfunc(libref(TEMPLIB)) ne 0 %then %do;
+    %put ERROR: Cannot create library reference for &libpath;
+    %return;
+  %end;
+
+  /* Get list of SAS datasets (i.e. .sas7bdat files) */
+  proc sql noprint;
+    select memname
+      into :dsns separated by '|'
+    from dictionary.tables
+    where libname='TEMPLIB' and memtype='DATA';
+  quit;
+
+  %if %length(&dsns)=0 %then %do;
+    %put NOTE: No datasets found in directory &libpath;
+    libname TEMPLIB clear;
+    %return;
+  %end;
+
+  /* Ensure DAC_CSV output directory exists */
+  %if %sysfunc(fileexist(&outdir)) = 0 %then %do;
+    %put NOTE: Creating directory &outdir;
+    options noxwait noxsync;
+    %sysexec mkdir "&outdir";
+  %end;
+
+  /* Export each dataset to CSV in DAC_CSV folder */
+  %let i = 1;
+  %do %while(%scan(&dsns, &i, '|') ne );
+    %let ds = %scan(&dsns, &i, '|');
+    %let outfile = &outdir.\&ds..csv;
+
+    %if %upcase(&replace)=YES %then %let _rep=replace; %else %let _rep=;
+
+    %put NOTE: Exporting &ds to &outfile;
+
+    proc export data=TEMPLIB.&ds
+                outfile="&outfile"
+                dbms=csv
+                &_rep;
+    run;
+
+    %let i = %eval(&i + 1);
+  %end;
+
+  /* Clear temporary library reference */
+  libname TEMPLIB clear;
+%mend export_lib_from_path;
+
+/* Execute using CLI lib_path, output always to parent\DAC_CSV */
+%export_lib_from_path(libpath=&lib_path, outdir=&out_dir, replace=&replace_opt);
+
+/***
+To run from Windows
+"C:\Program Files\SASHome\SASFoundation\9.4\sas.exe" `
+  -sysin `Code/SAS/CLI%20Version/SAStoCSVcli1102` `
+  -sysparm "C:\path\to\input\folder,,YES" `
+  -nosplash -noterminal
+  ***/

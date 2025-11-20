@@ -1,6 +1,6 @@
 /* ----------------------------------------
 Code exported from SAS Enterprise Guide
-DATE: Friday, October 31, 2025     TIME: 10:10:32 AM
+DATE: Sunday, November 2, 2025     TIME: 2:51:57 PM
 PROJECT: DataPreproccessing
 PROJECT PATH: C:\Users\rooneyz\Documents\Code\DataPreproccessing.egp
 ---------------------------------------- */
@@ -168,99 +168,60 @@ ODS tagsets.sasreport13(ID=EGSRX) FILE=EGSRX
     options(rolap="on")
 ;
 
-/*   START OF NODE: sas_csv_compare1030   */
+/*   START OF NODE: SAStoCSVlib1028_WORKING   */
 %_eg_hidenotesandsource;
 
+%LET _CLIENTTASKLABEL='SAStoCSVlib1028_WORKING';
+%LET _CLIENTPROCESSFLOWNAME='SAStoCSV';
+%LET _CLIENTPROJECTPATH='C:\Users\rooneyz\Documents\Code\DataPreproccessing.egp';
+%LET _CLIENTPROJECTPATHHOST='SPH-PMAN10';
+%LET _CLIENTPROJECTNAME='DataPreproccessing.egp';
+%LET _SASPROGRAMFILE='';
+%LET _SASPROGRAMFILEHOST='';
 
 GOPTIONS ACCESSIBLE;
 %_eg_restorenotesandsource;
 
-%let folder1 =C:\Users\rooneyz\Documents\Code\SAS_Out\DAC_CSV;
-%let folder2 =C:\Users\rooneyz\Documents\TestData\raw_data_csv\Enyo_v2_CSV;
-%let output_file =C:\Users\rooneyz\Documents\Code\SAS_Out\sas_comparison_report.xlsx;
+%macro export_lib(lib=WORK, outdir=C:\exports, replace=YES);
+  %let libup = %upcase(&lib);
 
+  proc sql noprint;
+    select memname
+      into :dsns separated by '|'
+    from dictionary.tables
+    where libname="&libup" and memtype='DATA';
+  quit;
 
-/* Step 1: Create an empty dataset to store comparison results */
-data comparison_results;
-    length filename $100. variable $32. base_value $200. compare_value $200.;
-    stop;
-run;
+  %if %length(&dsns)=0 %then %do;
+    %put NOTE: No datasets found in library &lib;
+    %return;
+  %end;
 
-/* Step 2: Get list of CSV files */
-filename csvlist pipe "dir /b &folder1.\*.csv";
-data csv_files;
-    length filename $100.;
-    infile csvlist truncover;
-    input filename $;
-run;
+  %if %sysfunc(fileexist(&outdir)) = 0 %then %do;
+    options noxwait noxsync;
+    %sysexec mkdir "&outdir";
+  %end;
 
-/* Step 3: Macro to compare CSV files */
-%macro compare_csvs(file);
-    /* Import both files */
-    proc import datafile="&folder1.\&file" out=work.f1_data dbms=csv replace;
-        guessingrows=max;
+  %let i = 1;
+  %do %while(%scan(&dsns, &i, '|') ne );
+    %let ds = %scan(&dsns, &i, '|');
+    %let outfile = &outdir\&ds..csv;
+
+    %if %upcase(&replace)=YES %then %let _rep=replace; %else %let _rep=;
+
+    proc export data=&lib..&ds
+                outfile="&outfile"
+                dbms=csv
+                &_rep;
     run;
-    
-    proc import datafile="&folder2.\&file" out=work.f2_data dbms=csv replace;
-        guessingrows=max;
-    run;
-    
-    /* Compare the datasets */
-    proc compare base=work.f1_data compare=work.f2_data 
-                 out=work.diffs outnoequal noprint;
-    run;
-    
-    /* Check if differences exist */
-    %if %sysfunc(exist(work.diffs)) %then %do;
-        /* Add filename to differences */
-        data work.diffs;
-            set work.diffs;
-            length filename $100.;
-            filename = "&file";
-        run;
-        
-        /* Append to results */
-        proc append base=comparison_results data=work.diffs force;
-        run;
-    %end;
-    
-    /* Clean up temporary datasets */
-    proc datasets library=work nolist;
-        delete f1_data f2_data diffs;
-    quit;
-%mend;
 
-/* Step 4: Loop through all CSV files */
-data _null_;
-    set csv_files;
-    call execute('%compare_csvs(' || trim(filename) || ')');
-run;
-
-/* Step 5: Export results if any differences found */
-%macro export_results;
-    %let dsid = %sysfunc(open(comparison_results));
-    %let nobs = %sysfunc(attrn(&dsid, nobs));
-    %let rc = %sysfunc(close(&dsid));
-    
-    %if &nobs > 0 %then %do;
-        proc export data=comparison_results
-            outfile="&output_file"
-            dbms=xlsx
-            replace;
-        run;
-        
-        %put NOTE: Comparison results exported to &output_file;
-        %put NOTE: &nobs differences found;
-    %end;
-    %else %do;
-        %put NOTE: No differences found between the datasets;
-    %end;
-%mend;
-
-%export_results;
+    %let i = %eval(&i + 1);
+  %end;
+%mend export_lib;
 
 
-
+/* Example usage */
+%export_lib(lib=ENYO2, outdir=C:\Users\rooneyz\Documents\Code\SAS_OUT\DAC_CSV, replace=YES);
 
 %_eg_hidenotesandsource;
 

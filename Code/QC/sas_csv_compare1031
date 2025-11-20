@@ -1,0 +1,161 @@
+/* Step 1: Create empty datasets for results and summary */
+data comparison_results;
+    length filename $100. variable $32. base_value $200. compare_value $200.;
+    stop;
+run;
+
+data comparison_summary;
+    length filename $100. status $20. base_obs 8 compare_obs 8 diff_count 8;
+    stop;
+run;
+
+/* Step 2: Get list of CSV files */
+filename csvlist pipe "dir /b &folder1.\*.csv";
+data csv_files;
+    length filename $100.;
+    infile csvlist truncover;
+    input filename $;
+run;
+
+/* Step 3: Enhanced macro to compare CSV files and track summary */
+%macro compare_csvs(file);
+    %local base_obs comp_obs diff_obs base_name sheet_name;
+
+    /* Create sheet name from filename (remove extension, limit to 31 chars) */
+    %let base_name = %scan(&file, 1, .);
+    %let sheet_name = %substr(&base_name, 1, %sysfunc(min(31, %length(&base_name))));
+
+    /* Import both files */
+    proc import datafile="&folder1.\&file" out=work.f1_data dbms=csv replace;
+        guessingrows=max;
+    run;
+
+    proc import datafile="&folder2.\&file" out=work.f2_data dbms=csv replace;
+        guessingrows=max;
+    run;
+
+    /* Get observation counts */
+    %let dsid = %sysfunc(open(work.f1_data));
+    %let base_obs = %sysfunc(attrn(&dsid, nobs));
+    %let rc = %sysfunc(close(&dsid));
+
+    %let dsid = %sysfunc(open(work.f2_data));
+    %let comp_obs = %sysfunc(attrn(&dsid, nobs));
+    %let rc = %sysfunc(close(&dsid));
+
+    /* Compare the datasets */
+    proc compare base=work.f1_data compare=work.f2_data
+                 out=work.diffs outnoequal noprint;
+    run;
+
+    /* Count differences */
+    %let diff_obs = 0;
+    %if %sysfunc(exist(work.diffs)) %then %do;
+        %let dsid = %sysfunc(open(work.diffs));
+        %let diff_obs = %sysfunc(attrn(&dsid, nobs));
+        %let rc = %sysfunc(close(&dsid));
+
+        /* Store individual comparison results with sheet name */
+        data work.comp_&base_name;
+            set work.diffs;
+            length filename $100. sheet_name $31.;
+            filename = "&file";
+            sheet_name = "&sheet_name";
+        run;
+
+        /* Append to master results */
+        proc append base=comparison_results data=work.diffs force;
+        run;
+    %end;
+    %else %do;
+        /* Create empty dataset even if no differences */
+        data work.comp_&base_name;
+            length filename $100. sheet_name $31. message $200.;
+            filename = "&file";
+            sheet_name = "&sheet_name";
+            message = "No differences found";
+            output;
+        run;
+    %end;
+
+    /* Add summary record */
+    data work.summary_rec;
+        length filename $100. status $20. base_obs 8 compare_obs 8 diff_count 8;
+        filename = "&file";
+        base_obs = &base_obs;
+        compare_obs = &comp_obs;
+        diff_count = &diff_obs;
+        if diff_count > 0 then status = "DIFFERENCES FOUND";
+        else if base_obs ne compare_obs then status = "ROW COUNT MISMATCH";
+        else status = "IDENTICAL";
+    run;
+
+    proc append base=comparison_summary data=work.summary_rec force;
+    run;
+
+    /* Clean up temporary datasets */
+    proc datasets library=work nolist;
+        delete f1_data f2_data diffs summary_rec;
+    quit;
+%mend;
+
+/* Step 4: Loop through all CSV files */
+data _null_;
+    set csv_files;
+    call execute('%compare_csvs(' || trim(filename) || ')');
+run;
+
+/* Step 5: Export to Excel with multiple sheets */
+%macro export_results;
+    %let dsid = %sysfunc(open(comparison_summary));
+    %let nobs = %sysfunc(attrn(&dsid, nobs));
+    %let rc = %sysfunc(close(&dsid));
+
+    %if &nobs > 0 %then %do;
+        /* Delete existing file if it exists */
+        %if %sysfunc(fileexist(&output_file)) %then %do;
+            %let rc = %sysfunc(filename(fref, &output_file));
+            %let rc = %sysfunc(fdelete(&fref));
+            %let rc = %sysfunc(filename(fref));
+        %end;
+
+        /* Use ODS EXCEL for multiple sheets */
+        ods excel file="&output_file" options(sheet_name="Summary");
+
+        /* Export summary sheet */
+        proc print data=comparison_summary noobs;
+        run;
+
+        /* Export each individual comparison as separate sheet */
+        proc sql noprint;
+            select distinct cats('comp_', scan(filename, 1, '.')),
+                   scan(filename, 1, '.')
+            into :dsnames separated by ' ',
+                 :sheetnames separated by '|'
+            from comparison_summary;
+        quit;
+
+        %let num_files = &sqlobs;
+
+        %do i = 1 %to &num_files;
+            %let dsname = %scan(&dsnames, &i, %str( ));
+            %let sheetname = %scan(&sheetnames, &i, |);
+
+            %if %sysfunc(exist(work.&dsname)) %then %do;
+                ods excel options(sheet_name="&sheetname");
+                proc print data=work.&dsname noobs;
+                run;
+            %end;
+        %end;
+
+        ods excel close;
+
+        %put NOTE: Comparison report exported to &output_file;
+        %put NOTE: Total files compared: &nobs;
+    %end;
+    %else %do;
+        %put WARNING: No files found to compare;
+    %end;
+%mend;
+
+%export_results;
