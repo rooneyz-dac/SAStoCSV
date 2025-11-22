@@ -1,0 +1,233 @@
+/********************************************************************************
+* Program Name: SAStoXPTcli20251121v2.sas
+*
+* Purpose:
+*   Bidirectional conversion utility for SAS datasets between SAS7BDAT and XPT
+*   (SAS Transport) formats. Designed for command-line execution.
+*
+* Description:
+*   This script performs batch conversion of SAS datasets:
+*   - Converts .sas7bdat files to .xpt format in OUTDIR\DAC_XPT
+*   - Converts .xpt files to .sas7bdat format in OUTDIR\DAC_SDTM
+*   - Creates output directories only when needed
+*   - Logs all conversion activities and errors
+*   - Truncates dataset names to 8 characters for XPT format compliance
+*
+* Usage:
+*   sas -sysparm "input_folder|output_folder" -sysin SAStoXPTcli20251121v2.sas
+*
+* Examples:
+*   1. Basic conversion:
+*      sas -sysparm "C:\data\input|C:\data\output" -sysin SAStoXPTcli20251121v2.sas
+*
+*   2. With network paths:
+*      sas -sysparm "\\server\share\input|\\server\share\output" -sysin SAStoXPTcli20251121v2.sas
+*
+*   3. With spaces in paths (use quotes):
+*      sas -sysparm "C:\My Data\input|C:\My Data\output" -sysin SAStoXPTcli20251121v2.sas
+*
+* Parameters:
+*   SYSPARM: Pipe-delimited string containing two directory paths:
+*            Format: "input_directory|output_directory"
+*            - input_directory:  Source folder containing files to convert
+*            - output_directory: Destination folder for converted files
+*
+* Input Requirements:
+*   - Input directory must exist and be accessible
+*   - Files must have .sas7bdat or .xpt extensions
+*   - Read permissions required for input directory
+*
+* Output Structure:
+*   OUTDIR\
+*   ├── DAC_XPT\           (Created if .sas7bdat files are found)
+*   │   └── *.xpt          (Converted XPT files)
+*   ├── DAC_SDTM\          (Created if .xpt files are found)
+*   │   └── *.sas7bdat     (Converted SAS datasets)
+*   └── xpt_error_log.txt  (Conversion log and error messages)
+*
+* XPT Format Limitations:
+*   - Member names limited to 8 characters
+*   - Dataset names automatically truncated to first 8 characters
+*   - Example: "berkeley_pbo_ae" becomes "berkeley"
+*
+* Error Handling:
+*   - Validates input/output directory existence
+*   - Logs all conversion activities to xpt_error_log.txt
+*   - Aborts execution if directories are invalid
+*   - Debug statements written to SAS log
+*
+* Dependencies:
+*   - SAS Base
+*   - Windows operating system (for dir command)
+*   - File system access to input/output directories
+*
+* Author: [Your Name]
+* Date Created: 2025-11-21
+* Version: 2.0
+*
+* Modification History:
+* Date       Author      Version  Description
+* ---------- ----------- -------- ------------------------------------------------
+* 2025-11-21 [Name]      1.0      Initial version with command-line support
+* 2025-11-21 [Name]      2.0      Added 8-character truncation for XPT compliance
+*                                 Fixed datetime format issues
+*                                 Added detailed debugging statements
+*
+* Notes:
+*   - XPT format is required for FDA submissions
+*   - Dataset names longer than 8 characters will be truncated
+*   - Both input and output directories must exist before running
+*   - Log file is always created in the output directory
+*
+********************************************************************************/
+
+%macro convert_files;
+    /* Use &sysparm instead of %sysget(SYSPARM) */
+    %let sysparm_value = &sysparm;
+    %put DEBUG: Raw SYSPARM value = &sysparm_value;
+
+    %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+    %put DEBUG: Pipe position = &pipe_pos;
+
+    %if &pipe_pos > 0 %then %do;
+        %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+        %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+    %end;
+    %else %do;
+        %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+        %abort;
+    %end;
+
+    %put DEBUG: Input Directory = &indir;
+    %put DEBUG: Output Directory = &outdir;
+
+    %let indir_exist = %sysfunc(fileexist(&indir));
+    %let outdir_exist = %sysfunc(fileexist(&outdir));
+
+    %put DEBUG: Input directory exists = &indir_exist;
+    %put DEBUG: Output directory exists = &outdir_exist;
+
+    %if &indir_exist = 0 %then %do;
+        %put ERROR: Input directory does not exist: &indir;
+        %abort;
+    %end;
+
+    %if &outdir_exist = 0 %then %do;
+        %put ERROR: Output directory does not exist: &outdir;
+        %abort;
+    %end;
+
+    %let errlog = &outdir\xpt_error_log.txt;
+
+    data _null_;
+        file "&errlog";
+        length dt $19;
+        dt = put(datetime(), datetime19.);
+        put "Error Log - " dt;
+        put "Input Directory: &indir";
+        put "Output Directory: &outdir";
+        put "----------------------------------------";
+    run;
+
+    filename infiles pipe "dir /b ""&indir\*.sas7bdat"" ""&indir\*.xpt"" 2>nul";
+
+    data file_list;
+        infile infiles truncover;
+        input filename $256.;
+        length filetype $10;
+        if index(upcase(filename), '.SAS7BDAT') > 0 then filetype = 'SAS7BDAT';
+        else if index(upcase(filename), '.XPT') > 0 then filetype = 'XPT';
+    run;
+
+    filename infiles clear;
+
+    proc sql noprint;
+        select count(*) into :sas7bdat_count from file_list where filetype = 'SAS7BDAT';
+        select count(*) into :xpt_count from file_list where filetype = 'XPT';
+    quit;
+
+    %put DEBUG: Found &sas7bdat_count SAS7BDAT files;
+    %put DEBUG: Found &xpt_count XPT files;
+
+    %if &sas7bdat_count > 0 %then %do;
+        %let xpt_dir = &outdir\DAC_XPT;
+        %let xpt_exist = %sysfunc(fileexist(&xpt_dir));
+
+        %if &xpt_exist = 0 %then %do;
+            %put DEBUG: Creating directory &xpt_dir;
+            %sysexec mkdir "&xpt_dir";
+        %end;
+
+        libname inlib "&indir";
+
+        data _null_;
+            set file_list;
+            where filetype = 'SAS7BDAT';
+
+            length dsname memname $32 xpt_path $256;
+
+            dsname = scan(filename, 1, '.');
+
+            /* Truncate to last 8 characters for XPT compliance */
+            if length(dsname) > 8 then
+                memname = substr(dsname, length(dsname) - 7);
+            else
+                memname = dsname;
+
+            xpt_path = "&xpt_dir\" || strip(memname) || ".xpt";
+
+            call execute('libname xptlib xport "' || strip(xpt_path) || '";');
+            call execute('proc copy in=inlib out=xptlib memtype=data; select ' || strip(dsname) || ' / out=' || strip(memname) || '; run;');
+            call execute('libname xptlib clear;');
+
+            file "&errlog" mod;
+            put "Converted to XPT: " dsname " -> " memname;
+        run;
+
+        libname inlib clear;
+    %end;
+
+    %if &xpt_count > 0 %then %do;
+        %let sdtm_dir = &outdir\DAC_SDTM;
+        %let sdtm_exist = %sysfunc(fileexist(&sdtm_dir));
+
+        %if &sdtm_exist = 0 %then %do;
+            %put DEBUG: Creating directory &sdtm_dir;
+            %sysexec mkdir "&sdtm_dir";
+        %end;
+
+        libname outsdtm "&sdtm_dir";
+
+        data _null_;
+            set file_list;
+            where filetype = 'XPT';
+
+            length dsname $32;
+
+            dsname = scan(filename, 1, '.');
+
+            call execute('libname xptlib xport "' || "&indir\" || strip(filename) || '";');
+            call execute('proc copy in=xptlib out=outsdtm; run;');
+            call execute('libname xptlib clear;');
+
+            file "&errlog" mod;
+            put "Converted to SAS7BDAT: " dsname;
+        run;
+
+        libname outsdtm clear;
+    %end;
+
+    %put DEBUG: Conversion process completed;
+
+    data _null_;
+        file "&errlog" mod;
+        length dt $19;
+        dt = put(datetime(), datetime19.);
+        put "----------------------------------------";
+        put "Process completed: " dt;
+    run;
+
+%mend convert_files;
+
+%convert_files;
+

@@ -1,28 +1,45 @@
+
 /* ---------------------------------------------------------
    SAStoCSVcli1120v7.sas
    Usage (Windows CMD):
    sas -sysin C:\path\to\SAStoCSVcli1120v7.sas -SYSPARM "C:\path\to\sas\data"
 --------------------------------------------------------- */
 
-/* 1) Get input directory from -SYSPARM, or use a default */
+/* 1) Get input directory from -SYSPARM, or error if not provided */
 %let in_dir = %sysfunc(dequote(&SYSPARM));
 
 %if %length(&in_dir) = 0 %then %do;
-    %let in_dir = C:\Users\rooneyz\Documents\TestData\EnyoTestData\SDTM;
-    %put WARNING: SYSPARM not provided. Using default: &in_dir;
+    %put ERROR: SYSPARM not provided. You must specify an input directory.;
+    %put ERROR: Usage: sas -sysin path\to\script.sas -SYSPARM "C:\path\to\data";
+    %abort cancel;
 %end;
 
 %put NOTE: Input directory = &in_dir;
 
-/* 2) Derive parent directory and DAC_CSV output directory */
+/* 2) Point a libname to input directory (for *.sas7bdat) */
+libname inlib "&in_dir";
+
+/* 3) Derive parent directory and DAC_CSV output directory */
 data _null_;
     length in $260 parent $260 out $260;
-    in = "&in_dir";
+    in = pathname('inlib');
     in = translate(in, '\', '/');
-    if substr(in, length(in), 1) = '\' then in = substr(in, 1, length(in) - 1);
-    parent = substr(in, 1, length(in) - index(reverse(in), '\'));
-    if parent = '' then parent = in;
+
+    if substr(in, length(in), 1) = '\' then
+        in = substr(in, 1, length(in) - 1);
+
+    pos = length(in) - index(reverse(in), '\') + 1;
+
+    if pos > 0 and pos < length(in) then
+        parent = substr(in, 1, pos - 1);
+    else
+        parent = in;
+
+    if substr(parent, length(parent), 1) = '\' then
+        parent = substr(parent, 1, length(parent) - 1);
+
     out = cats(parent, '\DAC_CSV');
+
     call symputx('parent_dir', parent, 'G');
     call symputx('out_dir', out, 'G');
 run;
@@ -30,7 +47,8 @@ run;
 %put NOTE: Parent directory = &parent_dir;
 %put NOTE: Output directory = &out_dir;
 
-/* 3) Create DAC_CSV folder if it does not exist */
+
+/* 4) Create DAC_CSV folder if it does not exist */
 options noxwait noxsync;
 data _null_;
     rc = dcreate('DAC_CSV', "&parent_dir");
@@ -38,13 +56,10 @@ data _null_;
     else put "ERROR: Could not create directory &out_dir";
 run;
 
-/* 3a) Set up error log file in output directory */
+/* 5) Set up error log file in output directory */
 filename errlog "&out_dir.\error_log.txt";
 
-/* 4) Point a libname to input directory (for *.sas7bdat) */
-libname inlib "&in_dir";
-
-/* 5) Get list of all datasets in INDIR */
+/* 6) Get list of all datasets in INDIR */
 proc sql noprint;
     create table work._dslist as
     select memname
@@ -53,7 +68,7 @@ proc sql noprint;
     order by memname;
 quit;
 
-/* 6) Macro to export all datasets to CSV in DAC_CSV */
+/* 7) Macro to export all datasets to CSV in DAC_CSV */
 %macro export_all_to_csv;
     %local n i dsname;
     proc sql noprint;
@@ -83,7 +98,7 @@ quit;
 
 %export_all_to_csv;
 
-/* 7) Create error report based on SYSERR */
+/* 8) Create error report based on SYSERR */
 data _null_;
     length dt $20 syserr_val $10;
     file errlog;
@@ -103,7 +118,10 @@ data _null_;
     end;
 run;
 
-
-/* 8) Clean up */
+/* 9) Clean up */
 libname inlib clear;
 filename errlog clear;
+
+
+
+
