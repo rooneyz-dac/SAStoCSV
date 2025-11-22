@@ -16,76 +16,18 @@
 * Usage:
 *   sas -sysparm "input_folder|output_folder" -sysin SAStoXPTcli20251121v3.sas
 *
-* Examples:
-*   1. Basic conversion:
-*      sas -sysparm "C:\data\input|C:\data\output" -sysin SAStoXPTcli20251121v3.sas
-*
-*   2. With network paths:
-*      sas -sysparm "\\server\share\input|\\server\share\output" -sysin SAStoXPTcli20251121v3.sas
-*
-*   3. With spaces in paths (use quotes):
-*      sas -sysparm "C:\My Data\input|C:\My Data\output" -sysin SAStoXPTcli20251121v3.sas
-*
-* Parameters:
-*   SYSPARM: Pipe-delimited string containing two directory paths:
-*            Format: "input_directory|output_directory"
-*            - input_directory:  Source folder containing files to convert
-*            - output_directory: Destination folder for converted files
-*
-* Input Requirements:
-*   - Input directory must exist and be accessible
-*   - Files must have .sas7bdat or .xpt extensions
-*   - Read permissions required for input directory
-*
-* Output Structure:
-*   OUTDIR\
-*   ├── DAC_XPT\           (Created if .sas7bdat files are found)
-*   │   └── *.xpt          (Converted XPT files)
-*   ├── DAC_SDTM\          (Created if .xpt files are found)
-*   │   └── *.sas7bdat     (Converted SAS datasets)
-*   └── xpt_error_log.txt  (Conversion log and error messages)
-*
 * XPT Format Limitations:
 *   - Member names limited to 8 characters
 *   - Dataset names automatically truncated to first 4 + last 4 characters
 *   - Example: "berkeley_pbo_ae" becomes "berko_ae"
 *
-* Error Handling:
-*   - Validates input/output directory existence
-*   - Logs all conversion activities to xpt_error_log.txt
-*   - Aborts execution if directories are invalid
-*   - Debug statements written to SAS log
-*
-* Dependencies:
-*   - SAS Base
-*   - Windows operating system (for dir command)
-*   - File system access to input/output directories
-*
 * Author: [Your Name]
 * Date Created: 2025-11-21
-* Version: 3.1
-*
-* Modification History:
-* Date       Author      Version  Description
-* ---------- ----------- -------- ------------------------------------------------
-* 2025-11-21 [Name]      1.0      Initial version with command-line support
-* 2025-11-21 [Name]      2.0      Added 8-character truncation for XPT compliance
-*                                 Fixed datetime format issues
-*                                 Added detailed debugging statements
-* 2025-11-21 [Name]      3.0      Changed truncation to first 6 + last 2 characters
-*                                 Replaced %sysexec with dcreate function
-* 2025-11-21 [Name]      3.1      Changed truncation to first 4 + last 4 characters
-*
-* Notes:
-*   - XPT format is required for FDA submissions
-*   - Dataset names longer than 8 characters will be truncated (first 4 + last 4)
-*   - Both input and output directories must exist before running
-*   - Log file is always created in the output directory
+* Version: 3.2
 *
 ********************************************************************************/
 
 %macro convert_files;
-    /* Use &sysparm instead of %sysget(SYSPARM) */
     %let sysparm_value = &sysparm;
     %put DEBUG: Raw SYSPARM value = &sysparm_value;
 
@@ -106,9 +48,6 @@
 
     %let indir_exist = %sysfunc(fileexist(&indir));
     %let outdir_exist = %sysfunc(fileexist(&outdir));
-
-    %put DEBUG: Input directory exists = &indir_exist;
-    %put DEBUG: Output directory exists = &outdir_exist;
 
     %if &indir_exist = 0 %then %do;
         %put ERROR: Input directory does not exist: &indir;
@@ -184,8 +123,19 @@
             xpt_path = "&xpt_dir\" || strip(memname) || ".xpt";
 
             call execute('libname xptlib xport "' || strip(xpt_path) || '";');
-            call execute('proc copy in=inlib out=xptlib memtype=data; select ' || strip(dsname) || ' / out=' || strip(memname) || '; run;');
-            call execute('%if &syserr > 4 %then %put ERROR: Failed to convert ' || strip(dsname) || ';');
+
+            /* Use PROC DATASETS to rename, then PROC COPY to transfer */
+            if dsname ne memname then do;
+                call execute('proc datasets library=inlib nolist; change ' || strip(dsname) || '=' || strip(memname) || '; quit;');
+            end;
+
+            call execute('proc copy in=inlib out=xptlib memtype=data; select ' || strip(memname) || '; run;');
+
+            /* Rename back if needed */
+            if dsname ne memname then do;
+                call execute('proc datasets library=inlib nolist; change ' || strip(memname) || '=' || strip(dsname) || '; quit;');
+            end;
+
             call execute('libname xptlib clear;');
 
             file "&errlog" mod;
@@ -225,7 +175,6 @@
 
             call execute('libname xptlib xport "' || "&indir\" || strip(filename) || '";');
             call execute('proc copy in=xptlib out=outsdtm; run;');
-            call execute('%if &syserr > 4 %then %put ERROR: Failed to convert ' || strip(dsname) || ';');
             call execute('libname xptlib clear;');
 
             file "&errlog" mod;
