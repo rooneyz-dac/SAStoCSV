@@ -1,0 +1,135 @@
+%macro normalize_out(out=, default=compare_results.xlsx);
+  %local outstr len firstc lastc lastChar lastTokenBS lastTokenFS lastToken norm;
+  %let outstr=%sysfunc(strip(&out));
+  %let len=%length(&outstr);
+
+  /* empty -> return default filename */
+  %if &len = 0 %then %do;
+    %let norm=&default;
+    &norm
+    %return;
+  %end;
+
+  /* strip surrounding backtick, double or single quote if both ends match */
+  %if &len > 1 %then %do;
+    %let firstc=%substr(&outstr,1,1);
+    %let lastc=%substr(&outstr,&len,1);
+    %if &firstc=%str(`) and &lastc=%str(`) %then %let outstr=%substr(&outstr,2,%eval(&len-2));
+    %else %if &firstc=%str(") and &lastc=%str(") %then %let outstr=%substr(&outstr,2,%eval(&len-2));
+    %else %if &firstc=%str(') and &lastc=%str(') %then %let outstr=%substr(&outstr,2,%eval(&len-2));
+    %let len=%length(&outstr);
+  %end;
+
+  /* determine last character and last path token using both delimiters */
+  %let lastChar=%substr(&outstr,&len,1);
+  %let lastTokenBS=%sysfunc(scan(&outstr,-1,%str(\)));
+  %let lastTokenFS=%sysfunc(scan(&outstr,-1,%str(/)));
+  %if %length(&lastTokenBS) >= %length(&lastTokenFS) %then %let lastToken=&lastTokenBS;
+  %else %let lastToken=&lastTokenFS;
+
+  /* if last token has no dot, treat as directory and append default filename */
+  %if %index(&lastToken,.)=0 %then %do;
+    %if &lastChar=%str(\) or &lastChar=%str(/) %then %let norm=&outstr.&default;
+    %else %let norm=&outstr.\&default;
+  %end;
+  %else %let norm=&outstr;
+
+  &norm
+%mend normalize_out;
+
+
+%macro compare_csv_dirs(dir1=, dir2=, out=compare_results.xlsx, pattern=*.csv);
+  %local ncommon i file sheet ndiffs outpath;
+
+  /* normalize output path to ensure a filename */
+  %let outpath=%normalize_out(out=&out);
+
+  /* get file lists from Windows directories */
+  filename f1 pipe "dir /b /a-d ""&dir1.\&pattern.""";
+  data files1; infile f1 length=reclen; input fname $varying200. reclen; fname=strip(fname); run;
+  filename f2 pipe "dir /b /a-d ""&dir2.\&pattern.""";
+  data files2; infile f2 length=reclen; input fname $varying200. reclen; fname=strip(fname); run;
+
+  /* determine common and only-in lists */
+  proc sql;
+    create table common as
+      select a.fname from files1 a inner join files2 b
+      on upcase(a.fname)=upcase(b.fname);
+    create table only_in_dir1 as
+      select fname from files1 where upcase(fname) not in (select upcase(fname) from files2);
+    create table only_in_dir2 as
+      select fname from files2 where upcase(fname) not in (select upcase(fname) from files1);
+    select count(*) into :ncommon trimmed from common;
+  quit;
+
+  /* initialize summary */
+  data summary;
+    length fname $200 status $20 n_diffs 8;
+    stop;
+  run;
+
+  /* create Excel workbook and write unmatched lists */
+  ods excel file="&outpath" options(sheet_interval='none');
+
+  ods excel options(sheet_name="Only_in_dir1");
+  proc print data=only_in_dir1 noobs; title "Only in &dir1"; run;
+
+  ods excel options(sheet_name="Only_in_dir2");
+  proc print data=only_in_dir2 noobs; title "Only in &dir2"; run;
+
+  /* loop over common files */
+  %if %eval(&ncommon > 0) %then %do;
+    proc sql noprint;
+      select fname into :file1-:file&ncommon trimmed from common;
+    quit;
+
+    %do i=1 %to &ncommon;
+      %let file=&&file&i;
+      /* sanitize sheet name (replace dot with underscore and limit length) */
+      %let sheet=%sysfunc(translate(&file,_,.));
+      %let sheet=%sysfunc(substr(&sheet,1,28));
+
+      /* import CSVs */
+      proc import datafile="&dir1.\&file" out=_left dbms=csv replace; getnames=yes; guessingrows=32767; run;
+      proc import datafile="&dir2.\&file" out=_right dbms=csv replace; getnames=yes; guessingrows=32767; run;
+
+      /* compare and produce differences dataset */
+      ods excel options(sheet_name="&sheet._Summary");
+      proc compare base=_left compare=_right listall out=_diffs outnoequal;
+      run;
+
+      /* print the differences dataset */
+      ods excel options(sheet_name="&sheet._Diffs");
+      proc print data=_diffs noobs; run;
+
+      /* count differences (set to 0 if dataset empty) */
+      %let ndiffs=0;
+      %if %sysfunc(exist(_diffs)) %then %do;
+        proc sql noprint;
+          select count(*) into :ndiffs trimmed from _diffs;
+        quit;
+        %if &ndiffs= %then %let ndiffs=0;
+      %end;
+
+      /* append to summary dataset */
+      data temp;
+        length fname $200 status $20 n_diffs 8;
+        fname="&file";
+        n_diffs=&ndiffs;
+        if n_diffs>0 then status="DIFFER"; else status="SAME";
+      run;
+      proc append base=summary data=temp force; run;
+
+      /* clean-up temp work tables for next iteration */
+      proc datasets lib=work nolist; delete _left _right _diffs temp; quit;
+    %end;
+  %end;
+
+  /* write overall summary */
+  ods excel options(sheet_name="Summary");
+  proc print data=summary noobs; title "Comparison Summary"; run;
+
+  ods excel close;
+
+  filename f1 clear; filename f2 clear;
+%mend compare_csv_dirs;

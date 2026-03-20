@@ -1,0 +1,78 @@
+/* SAS script to export SAS datasets to CSV */
+/* Created: 2025-11-20 */
+/* Runs without Enterprise Guide dependencies */
+
+/* 1) Define input library path */
+%let input_path = C:\Users\rooneyz\Documents\TestData\EnyoTestData\SDTM\DAC_SAS7BDAT;
+
+/* 2) Define output CSV path */
+%let output_path = C:\Users\rooneyz\Documents\TestData\EnyoTestData\SDTM\DAC_CSV;
+
+/* 3) Error log file */
+filename errlog "&output_path.\error_log.txt";
+
+/* 4) Assign library */
+libname inlib "&input_path.";
+
+/* 5) Get list of all datasets in library */
+proc sql noprint;
+    select distinct memname
+    into :dataset_list separated by ' '
+    from dictionary.tables
+    where libname = 'INLIB' and memtype = 'DATA';
+quit;
+
+/* 6) Count the datasets */
+%let num_datasets = %sysfunc(countw(&dataset_list., %str( )));
+
+/* 7) Loop through datasets and export to CSV */
+%macro export_all;
+    %do i = 1 %to &num_datasets.;
+        %let dsname = %scan(&dataset_list., &i., %str( ));
+
+        %put NOTE: Exporting INLIB.&dsname. to &output_path.\&dsname..csv;
+
+        proc export data=INLIB.&dsname.
+            outfile="&output_path.\&dsname..csv"
+            dbms=csv replace;
+        run;
+
+        %if &syserr. > 0 %then %do;
+            %put ERROR: Export of &dsname. failed with SYSERR=&syserr.;
+        %end;
+
+        proc sql noprint;
+            select count(*) into :record_count trimmed
+            from INLIB.&dsname.;
+        quit;
+
+        %put &record_count. records created in &output_path.\&dsname..csv from INLIB.&dsname..;
+        %put;
+    %end;
+%mend export_all;
+
+%export_all;
+
+/* 8) Create error report based on SYSERR */
+data _null_;
+    length dt $20 syserr_val $10;
+    file errlog;
+    dt = put(datetime(), datetime20.);
+    syserr_val = symget('SYSERR');
+
+    put "SAS Error Report";
+    put "Generated: " dt;
+    put "----------------------------------------";
+
+    if syserr_val ne '0' then do;
+        put "Errors detected. SYSERR = " syserr_val;
+        put "Check the SAS log for details.";
+    end;
+    else do;
+        put "No errors detected in the SAS run.";
+    end;
+run;
+
+/* 9) Clean up */
+libname inlib clear;
+filename errlog clear;

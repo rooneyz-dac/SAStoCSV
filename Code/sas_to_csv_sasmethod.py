@@ -5,56 +5,54 @@
 """
 Convert a folder of .sas7bdat files to CSV while capturing SAS metadata.
 
-Edit the CONFIGURATION block below (no .env, no CLI args).
+This variant can use SAS (via saspy) to perform the CSV export instead of
+using pyreadstat/pandas to write CSVs. Toggle with USE_SASPY.
 
-Outputs:
-  - <OUTPUT_DIR>/DAC_CSV/<relative_path>/<dataset>.csv
-  - <OUTPUT_DIR>/DAC_JSON_Metadata/<relative_path>/<dataset>__metadata.json
-  - <OUTPUT_DIR>/metadata_summary.csv      (per-variable metadata across datasets)
-  - <OUTPUT_DIR>/value_labels.csv          (flattened code->label mappings)
-  - <OUTPUT_DIR>/combined_codebook.json    (single aggregated JSON for all datasets)
-  - <OUTPUT_DIR>/conversion_errors.csv     (optional; files that failed with errors)
-
-Requirements:
-  pip install pyreadstat pandas
-"""
-""" Recommended Edits:
-INPUT_DIR  = r"C:\data\sas" # <--- CHANGE
-OUTPUT_DIR = r"C:\data\out" # <--- CHANGE
-APPLY_VALUE_LABELS = True
-SAS_CATALOG_DIR = r"C:\data\catalogs"  # or point SAS_CATALOG_FILE to a single .sas7bcat
+Edit the CONFIGURATION block below.
 """
 
 # ==== CONFIGURATION (EDIT THESE) ==============================================
-INPUT_DIR = r"C:\Users\rooneyz\Documents\TestData\MirumTestData"   # ← change this
-OUTPUT_DIR = r"output"      # ← and this
+INPUT_DIR = r"C:\Users\rooneyz\Documents\TestData\MirumTestData"
+OUTPUT_DIR = r"output"
 
-# Recursion & basic behavior
-RECURSIVE = True             # traverse subfolders
+RECURSIVE = True
 
-# CSV formatting
-NA_REP = ""                  # value to write for missing values in CSV
-ENCODING = None              # rarely needed; pyreadstat auto-detects (e.g., "latin-1")
+NA_REP = ""
+ENCODING = None
 
-# SAS value labels (formats)
-APPLY_VALUE_LABELS = False   # True to replace codes using SAS formats via catalog(s)
-SAS_CATALOG_FILE = None      # e.g., r"C:\path\to\formats.sas7bcat" (single catalog)
-SAS_CATALOG_DIR  = r"FilePath"      # e.g., r"C:\path\to\catalogs" (auto-match by file stem)
-SAS_FORMATS_AS_CATEGORY = False           # labeled columns become pandas categoricals
-SAS_FORMATS_AS_ORDERED = False           # ordered categorical for formats with order
+APPLY_VALUE_LABELS = False
+SAS_CATALOG_FILE = None
+SAS_CATALOG_DIR  = None
+SAS_FORMATS_AS_CATEGORY = False
+SAS_FORMATS_AS_ORDERED = False
 
-# Error report
-WRITE_ERROR_CSV = True                      # set to False to skip writing the error CSV
-ERROR_CSV_FILENAME = "00_conversion_errors.csv"  # change the file name if desired
+USE_SASPY = True
+
+WRITE_METADATA_JSON = True
+
+WRITE_ERROR_CSV = True
+ERROR_CSV_FILENAME = "00_conversion_errors.csv"
 # ==============================================================================
 
 import json
+import os
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime, timezone
+import traceback
 
 import pandas as pd
 import argparse
+
+_saspy_available = False
+_saspy_import_error: Optional[str] = None
+if USE_SASPY:
+    try:
+        import saspy  # type: ignore
+        _saspy_available = True
+    except Exception as e:
+        _saspy_available = False
+        _saspy_import_error = str(e)
 
 try:
     import pyreadstat
@@ -62,12 +60,9 @@ except ImportError as e:
     raise SystemExit("Missing dependency: pyreadstat. Install with: pip install pyreadstat") from e
 
 
-# ------------------------- Serialization utilities ---------------------------
 def safe_serialize(obj):
-    """Safely convert non-JSON-serializable objects to built-in types/strings."""
     import numpy as np
     import datetime as dt
-
     if isinstance(obj, (str, int, float, bool)) or obj is None:
         return obj
     if isinstance(obj, (list, tuple)):
@@ -92,9 +87,6 @@ def safe_serialize(obj):
 
 
 def extract_meta_dict(meta) -> Dict[str, Any]:
-    """
-    Build a comprehensive, JSON-serializable metadata dict from a pyreadstat meta object.
-    """
     md: Dict[str, Any] = {}
     md["dataset"] = {
         "file_label": getattr(meta, "file_label", None),
@@ -108,35 +100,29 @@ def extract_meta_dict(meta) -> Dict[str, Any]:
         "compression": getattr(meta, "compression", None),
     }
 
-    # Variable-level structures
     column_names = getattr(meta, "column_names", None) or []
     column_labels = getattr(meta, "column_labels", None) or []
     column_formats = getattr(meta, "column_formats", None) or []
-    variable_types = getattr(meta, "variable_types", None)  # dict(var -> "numeric"/"string"), if available
+    variable_types = getattr(meta, "variable_types", None)
     column_display_width = getattr(meta, "column_display_width", None) or []
 
-    # Value labels mapping per variable (if available)
     value_labels_by_var: Dict[str, Dict[Any, str]] = {}
     vv = getattr(meta, "variable_value_labels", None)
     if isinstance(vv, dict):
-        # Some builds provide var->dict; others var->labelset_name
-        any_is_dict = any(isinstance(v, dict) for v in vv.values())
-        if any_is_dict:
-            for var, mapping in vv.items():
-                if isinstance(mapping, dict):
-                    value_labels_by_var[var] = mapping
+        # some pyreadstat versions provide per-variable dicts mapping codes to labels
+        for var, mapping in vv.items():
+            if isinstance(mapping, dict):
+                value_labels_by_var[var] = mapping
 
     if not value_labels_by_var:
+        # fallback using variable_to_label + value_labels mapping
         var_to_labelset = getattr(meta, "variable_to_label", None)
-        if not isinstance(var_to_labelset, dict):
-            if isinstance(vv, dict) and all(isinstance(v, str) for v in vv.values()):
-                var_to_labelset = vv
         labelsets = getattr(meta, "value_labels", None)
         if isinstance(var_to_labelset, dict) and isinstance(labelsets, dict):
             for var, labelset_name in var_to_labelset.items():
-                mapping = labelsets.get(labelset_name)
-                if isinstance(mapping, dict):
-                    value_labels_by_var[var] = mapping
+                ls = labelsets.get(labelset_name)
+                if isinstance(ls, dict):
+                    value_labels_by_var[var] = ls
 
     variables: List[Dict[str, Any]] = []
     for i, name in enumerate(column_names):
@@ -171,30 +157,16 @@ def ensure_parent_dir(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-# ------------------------------ Catalog helpers ------------------------------
 def find_catalog_for_dataset(dataset_path: Path,
                              catalog_file_env: Optional[str],
                              catalog_dir_env: Optional[str]) -> Optional[Path]:
-    """
-    Determine which .sas7bcat to use for a given dataset.
-
-    Priority:
-      1) SAS_CATALOG_FILE (explicit)
-      2) Sibling file with same stem: <dataset_dir>/<stem>.sas7bcat
-      3) SAS_CATALOG_DIR: exact stem match, else first catalog found
-    """
-    # 1) Explicit single file
     if catalog_file_env:
         p = Path(catalog_file_env).expanduser()
         if p.exists():
             return p
-
-    # 2) Sibling next to dataset (same stem)
     sibling = dataset_path.with_suffix(".sas7bcat")
     if sibling.exists():
         return sibling
-
-    # 3) Directory search
     if catalog_dir_env:
         cd = Path(catalog_dir_env).expanduser()
         if cd.exists():
@@ -202,12 +174,10 @@ def find_catalog_for_dataset(dataset_path: Path,
             if exact.exists():
                 return exact
             for p in cd.glob("*.sas7bcat"):
-                return p  # fallback: first available
-
+                return p
     return None
 
 
-# ----------------------------- Reporting helpers -----------------------------
 def flatten_value_labels(dataset_name: str, rel_path: str, meta_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows = []
     for var in meta_dict.get("variables", []):
@@ -220,7 +190,7 @@ def flatten_value_labels(dataset_name: str, rel_path: str, meta_dict: Dict[str, 
                     "relative_path": rel_path,
                     "variable": var_name,
                     "code": code,
-                    "label": label
+                    "label": label,
                 })
     return rows
 
@@ -236,7 +206,7 @@ def append_metadata_summary(summary_rows: List[Dict[str, Any]],
 
     for var in meta_dict.get("variables", []):
         name = var.get("name")
-        has_vl = isinstance(var.get("value_labels"), dict) and len(var.get("value_labels")) > 0
+        has_vl = isinstance(var.get("value_labels"), dict) and len(var.get("value_labels") or {}) > 0
         summary_rows.append({
             "dataset": dataset_name,
             "relative_path": rel_path,
@@ -250,7 +220,46 @@ def append_metadata_summary(summary_rows: List[Dict[str, Any]],
         })
 
 
-# ------------------------------- Core convert --------------------------------
+def _ensure_sas_session(cfgname: Optional[str] = None) -> Tuple[Optional["saspy.SASsession"], Optional[str]]:
+    if not _saspy_available:
+        return None, _saspy_import_error
+    try:
+        if cfgname:
+            sas = saspy.SASsession(cfgname=cfgname)
+        else:
+            sas = saspy.SASsession()
+        return sas, None
+    except Exception as e:
+        err = str(e)
+        # If on Windows and STDIO transport was attempted, try IOM fallback if configured
+        if os.name == 'nt' and 'STDIO' in err.upper():
+            try:
+                # fallback config name expected in sascfg_personal.py (adjust if you use a different name)
+                sas = saspy.SASsession(cfgname='iomwin')
+                return sas, None
+            except Exception as e2:
+                return None, f"{err}  (IOM fallback failed: {e2})"
+        return None, err
+
+
+def _sas_export_csv(sas: "saspy.SASsession", in_path: Path, out_csv_path: Path, dataset_stem: str) -> None:
+    lib_path = str(in_path.parent).replace("\\", "/")
+    libref = "inlib"
+    out_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    out_csv_unix = str(out_csv_path).replace("\\", "/")
+    sas_code = f"""
+libname {libref} "{lib_path}";
+proc export data={libref}."{dataset_stem}"n
+    outfile="{out_csv_unix}"
+    dbms=csv
+    replace;
+    putnames=yes;
+run;
+libname {libref} clear;
+"""
+    sas.submit(sas_code)
+
+
 def convert_one_sas(
     in_path: Path,
     out_csv_path: Path,
@@ -258,46 +267,82 @@ def convert_one_sas(
     apply_value_labels: bool = False,
     na_rep: str = "",
     encoding: Optional[str] = None,
+    write_metadata: bool = True,
 ) -> Tuple[Dict[str, Any], Optional[pd.DataFrame]]:
-    """
-    Convert one SAS7BDAT to CSV and write per-dataset JSON metadata.
-    Always reads the entire dataset in a single call to pyreadstat.
-    Returns: (metadata_dict, df_sample) where df_sample is a small head for dtype reporting.
-    """
     ensure_parent_dir(out_csv_path)
-    ensure_parent_dir(out_meta_path)
+    if write_metadata:
+        ensure_parent_dir(out_meta_path)
 
     df_sample: Optional[pd.DataFrame] = None
+    dataset_stem = in_path.with_suffix("").name
 
-    read_kwargs = {
-        "dates_as_pandas_datetime": True,
-        "user_missing": True,
-    }
-    if encoding:
-        read_kwargs["encoding"] = encoding
+    used_sas = False
+    sas_reason: Optional[str] = None
+    sas_session = None
 
-    # Attach catalog if requested & available
-    if apply_value_labels:
-        catalog_path = find_catalog_for_dataset(
-            dataset_path=in_path,
-            catalog_file_env=SAS_CATALOG_FILE,
-            catalog_dir_env=SAS_CATALOG_DIR,
-        )
-        if catalog_path:
-            read_kwargs["catalog_file"] = str(catalog_path)
-            read_kwargs["formats_as_category"] = SAS_FORMATS_AS_CATEGORY
-            read_kwargs["formats_as_ordered_category"] = SAS_FORMATS_AS_ORDERED
-            print(f"  using catalog: {catalog_path}")
+    if not USE_SASPY:
+        sas_reason = "USE_SASPY disabled by configuration"
+    elif not _saspy_available:
+        sas_reason = f"saspy import failed: {_saspy_import_error}"
+    else:
+        sas_session, sess_err = _ensure_sas_session()
+        if sas_session is None:
+            sas_reason = f"SAS session creation failed: {sess_err}"
         else:
-            print("  (info) No .sas7bcat catalog found for labels; proceeding without applying formats.")
+            try:
+                print(f"  attempting SASPY export: {in_path} -> {out_csv_path}")
+                _sas_export_csv(sas_session, in_path, out_csv_path, dataset_stem)
+                used_sas = True
+            except Exception as e:
+                sas_reason = f"SAS export error: {e}"
+            finally:
+                try:
+                    sas_session.endsas()
+                except Exception:
+                    # best-effort session cleanup; ignore errors
+                    pass
 
-    # Read entire file at once
-    df, meta = pyreadstat.read_sas7bdat(str(in_path), **read_kwargs)
-    df_sample = df.head(50).copy()
-    df.to_csv(out_csv_path, index=False, na_rep=na_rep)
+    # Read metadata (always via pyreadstat) and write CSV via chosen path
+    if used_sas:
+        # SAS wrote the CSV; still read metadata via pyreadstat (fast enough in most cases)
+        try:
+            df, meta = pyreadstat.read_sas7bdat(str(in_path), dates_as_pandas_datetime=True, user_missing=True)
+            df_sample = df.head(50).copy()
+            meta_dict = extract_meta_dict(meta)
+            if write_metadata:
+                write_json(out_meta_path, meta_dict)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read metadata after SAS export: {e}") from e
+    else:
+        # fallback: read full dataset and write CSV with pandas
+        print(f"  exporting with pyreadstat (fallback): {in_path} -> {out_csv_path}")
+        read_kwargs = {
+            "dates_as_pandas_datetime": True,
+            "user_missing": True,
+        }
+        if encoding:
+            read_kwargs["encoding"] = encoding
+        if apply_value_labels:
+            catalog_path = find_catalog_for_dataset(in_path, SAS_CATALOG_FILE, SAS_CATALOG_DIR)
+            if catalog_path:
+                read_kwargs["formats_catalog_path"] = str(catalog_path)
+                read_kwargs["apply_value_formats"] = True
+                read_kwargs["formats_as_category"] = SAS_FORMATS_AS_CATEGORY
+                read_kwargs["formats_as_ordered"] = SAS_FORMATS_AS_ORDERED
+        df, meta = pyreadstat.read_sas7bdat(str(in_path), **read_kwargs)
+        df_sample = df.head(50).copy()
+        out_csv_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_csv_path, index=False, na_rep=na_rep)
+        meta_dict = extract_meta_dict(meta)
+        if write_metadata:
+            write_json(out_meta_path, meta_dict)
 
-    meta_dict = extract_meta_dict(meta)
-    write_json(out_meta_path, meta_dict)
+    # Print final SASPY usage status
+    if used_sas:
+        print(f"  SASPY used: True")
+    else:
+        print(f"  SASPY used: False; reason: {sas_reason}")
+
     return meta_dict, df_sample
 
 
@@ -306,9 +351,7 @@ def find_sas_files(root: Path, recursive: bool) -> List[Path]:
     return [p for p in root.glob(pattern) if p.is_file()]
 
 
-# ------------------------------------ main -----------------------------------
 def main():
-    # Allow runtime overrides; fall back to top-of-file constants
     parser = argparse.ArgumentParser(description="Convert folder of .sas7bdat files to CSV with metadata.")
     parser.add_argument("--input-dir", "-i", dest="input_dir", help="Path to input folder containing .sas7bdat files. Overrides top-level INPUT_DIR.")
     parser.add_argument("--output-dir", "-o", dest="output_dir", help="Path to output folder. Overrides top-level OUTPUT_DIR.")
@@ -321,7 +364,6 @@ def main():
     in_dir = Path(chosen_input).expanduser().resolve()
     out_dir = Path(chosen_output).expanduser().resolve()
 
-    # Basic validation (require either the constant or an override)
     if not chosen_input or str(chosen_input).strip() == "" or "path\\to" in str(chosen_input) or "path/to" in str(chosen_input):
         print("Please provide an input folder via --input-dir or set INPUT_DIR at the top of the script.")
         return
@@ -334,18 +376,17 @@ def main():
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create DAC_CSV and DAC_JSON_Metadata inside the chosen output folder
     csv_root = out_dir / "DAC_CSV"
     meta_root = out_dir / "DAC_JSON_Metadata"
     csv_root.mkdir(parents=True, exist_ok=True)
-    meta_root.mkdir(parents=True, exist_ok=True)
+    if WRITE_METADATA_JSON:
+        meta_root.mkdir(parents=True, exist_ok=True)
 
-    # Config echo
     print("Configuration:")
     print(f"  INPUT_DIR               = {in_dir}")
     print(f"  OUTPUT_DIR              = {out_dir}")
     print(f"  CSV_ROOT                = {csv_root}")
-    print(f"  META_ROOT               = {meta_root}")
+    print(f"  META_ROOT               = {meta_root}  (created: {WRITE_METADATA_JSON})")
     print(f"  RECURSIVE               = {RECURSIVE}")
     print(f"  NA_REP                  = {repr(NA_REP)}")
     print(f"  ENCODING                = {ENCODING}")
@@ -354,6 +395,10 @@ def main():
     print(f"  SAS_CATALOG_DIR         = {SAS_CATALOG_DIR}")
     print(f"  SAS_FORMATS_AS_CATEGORY = {SAS_FORMATS_AS_CATEGORY}")
     print(f"  SAS_FORMATS_AS_ORDERED  = {SAS_FORMATS_AS_ORDERED}")
+    print(f"  USE_SASPY               = {USE_SASPY} (available: {_saspy_available})")
+    if _saspy_import_error:
+        print(f"  SASPY_IMPORT_ERROR      = {_saspy_import_error}")
+    print(f"  WRITE_METADATA_JSON     = {WRITE_METADATA_JSON}")
     print(f"  WRITE_ERROR_CSV         = {WRITE_ERROR_CSV}")
     print(f"  ERROR_CSV_FILENAME      = {ERROR_CSV_FILENAME}")
     print()
@@ -368,17 +413,14 @@ def main():
     summary_rows: List[Dict[str, Any]] = []
     value_label_rows: List[Dict[str, Any]] = []
     combined_entries: List[Dict[str, Any]] = []
-
-    # Error collection (optional)
     error_rows: Optional[List[Dict[str, Any]]] = [] if WRITE_ERROR_CSV else None
 
     for f in sas_files:
         rel = f.relative_to(in_dir) if RECURSIVE else Path(f.name)
-        rel_no_ext = rel.with_suffix("")  # remove .sas7bdat
+        rel_no_ext = rel.with_suffix("")
         dataset_name = rel_no_ext.name
         rel_str = str(rel.parent).replace("\\", "/")
 
-        # write CSVs under DAC_CSV and JSON metadata under DAC_JSON_Metadata, preserving relative subfolders
         out_csv = csv_root / rel.parent / f"{rel_no_ext.name}.csv"
         out_meta = meta_root / rel.parent / f"{rel_no_ext.name}__metadata.json"
 
@@ -392,30 +434,37 @@ def main():
                 apply_value_labels=APPLY_VALUE_LABELS,
                 na_rep=NA_REP,
                 encoding=ENCODING,
+                write_metadata=WRITE_METADATA_JSON,
             )
         except Exception as ex:
-            # Always print the error
             print(f"  ERROR converting {rel}: {ex}")
-
-            # Optionally collect for the error CSV
             if error_rows is not None:
+                try:
+                    tb_list = traceback.extract_tb(ex.__traceback__) if ex.__traceback__ is not None else []
+                    err_file = tb_list[-1].filename if tb_list else None
+                    err_line = tb_list[-1].lineno if tb_list else None
+                    err_func = tb_list[-1].name if tb_list else None
+                except Exception:
+                    err_file = err_line = err_func = None
+                size_bytes = None
                 try:
                     size_bytes = f.stat().st_size
                 except Exception:
                     size_bytes = None
-
                 error_rows.append({
                     "dataset": dataset_name,
                     "relative_path": rel_str,
                     "source_file": str(rel).replace("\\", "/"),
                     "error_type": type(ex).__name__,
                     "error_message": str(ex),
+                    "error_file": err_file,
+                    "error_line": err_line,
+                    "error_func": err_func,
                     "file_size_bytes": size_bytes,
                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
                 })
             continue
 
-        # Success: aggregate
         append_metadata_summary(summary_rows, dataset_name, rel_str, meta_dict, df_sample)
         value_label_rows.extend(flatten_value_labels(dataset_name, rel_str, meta_dict))
 
@@ -426,7 +475,6 @@ def main():
             "metadata": meta_dict,
         })
 
-    # Aggregated CSVs
     if summary_rows:
         df_summary = pd.DataFrame(summary_rows)
         df_summary.sort_values(["relative_path", "dataset", "variable"], inplace=True)
@@ -437,7 +485,6 @@ def main():
         df_vl.sort_values(["relative_path", "dataset", "variable", "code"], inplace=True)
         df_vl.to_csv(out_dir / "value_labels.csv", index=False)
 
-    # Combined JSON codebook
     combined_codebook = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_root": str(in_dir),
@@ -451,18 +498,32 @@ def main():
     }
     write_json(out_dir / "combined_codebook.json", combined_codebook)
 
-    # Error report (optional)
-    if WRITE_ERROR_CSV and error_rows:
-        df_err = pd.DataFrame(error_rows)
-        df_err.sort_values(["relative_path", "dataset"], inplace=True)
+    if WRITE_ERROR_CSV:
+        error_columns = [
+            "dataset",
+            "relative_path",
+            "source_file",
+            "error_type",
+            "error_message",
+            "error_file",
+            "error_line",
+            "error_func",
+            "file_size_bytes",
+            "timestamp_utc",
+        ]
+        df_err = pd.DataFrame(error_rows or [], columns=error_columns)
+        if not df_err.empty:
+            df_err.sort_values(["relative_path", "dataset"], inplace=True)
         err_path = out_dir / ERROR_CSV_FILENAME
         df_err.to_csv(err_path, index=False)
-        print(f"\nCompleted with {len(error_rows)} error(s).")
+        n_err = len(df_err)
+        print(f"\nCompleted with {n_err} error(s).")
         print(f"- Error report: {err_path}")
 
     print("\nDone.")
     print(f"- CSVs in: {csv_root}")
-    print(f"- Per-dataset JSON metadata in: {meta_root}")
+    if WRITE_METADATA_JSON:
+        print(f"- Per-dataset JSON metadata in: {meta_root}")
     if summary_rows:
         print(f"- Aggregated per-variable metadata: {out_dir/'metadata_summary.csv'}")
     if value_label_rows:

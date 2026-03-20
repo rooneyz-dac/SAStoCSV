@@ -1,0 +1,66 @@
+%macro parse_args();
+  %global lib outdir replace;
+
+  %let lib = WORK;
+  %let outdir = .\output\DAC_CSV;
+  %let replace = YES;
+
+  %if %length(&sysparm) > 0 %then %do;
+    %let i = 1;
+    %let arg = %scan(&sysparm, &i, %str( ));
+
+    %do %while(&arg ne );
+      %let key = %scan(&arg, 1, =);
+      %let val = %scan(&arg, 2, =);
+
+      %if %upcase(&key) = LIB %then %let lib = &val;
+      %else %if %upcase(&key) = OUTDIR %then %let outdir = &val;
+      %else %if %upcase(&key) = REPLACE %then %let replace = &val;
+
+      %let i = %eval(&i + 1);
+      %let arg = %scan(&sysparm, &i, %str( ));
+    %end;
+  %end;
+%mend parse_args;
+
+%parse_args();
+
+%macro export_lib(lib=&lib, outdir=&outdir, replace=&replace);
+  %let libup = %upcase(&lib);
+
+  proc sql noprint;
+    select memname
+      into :dsns separated by '|'
+    from dictionary.tables
+    where libname="&libup" and memtype='DATA';
+  quit;
+
+  %if %length(&dsns)=0 %then %do;
+    %put NOTE: No datasets found in library &lib;
+    %return;
+  %end;
+
+  %if %sysfunc(fileexist(&outdir)) = 0 %then %do;
+    %put NOTE: Creating directory &outdir;
+    options noxwait noxsync;
+    %sysexec mkdir "&outdir";
+  %end;
+
+  %let i = 1;
+  %do %while(%scan(&dsns, &i, '|') ne );
+    %let ds = %scan(&dsns, &i, '|');
+    %let outfile = &outdir\&ds..csv;
+
+    %if %upcase(&replace)=YES %then %let _rep=replace; %else %let _rep=;
+
+    proc export data=&lib..&ds
+                outfile="&outfile"
+                dbms=csv
+                &_rep;
+    run;
+
+    %let i = %eval(&i + 1);
+  %end;
+%mend export_lib;
+
+%export_lib();

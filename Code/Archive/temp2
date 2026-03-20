@@ -1,0 +1,71 @@
+%macro CompareCsvFolders(base_folder, compare_folder, output_excel);
+
+    /* 1. Get list of CSV files in each folder */
+    filename _base_dir "&base_folder";
+    filename _compare_dir "&compare_folder";
+
+    data file_list_base;
+        length filename $256;
+        call system(cats('dir /b /s "&base_folder\*.csv" > temp_base.txt'));
+        infile 'temp_base.txt' truncover;
+        input filename $;
+        retain folder_type 'BASE';
+    run;
+
+    data file_list_compare;
+        length filename $256;
+        call system(cats('dir /b /s "&compare_folder\*.csv" > temp_compare.txt'));
+        infile 'temp_compare.txt' truncover;
+        input filename $;
+        retain folder_type 'COMPARE';
+    run;
+
+    /* Merge file lists to identify matching files */
+    data all_files;
+        merge file_list_base (in=inb rename=(filename=base_path))
+              file_list_compare (in=inc rename=(filename=compare_path));
+        by filename; /* Assuming filenames are consistent for matching */
+        if inb and inc; /* Only process files present in both */
+        base_name = scan(base_path, -1, '\');
+        compare_name = scan(compare_path, -1, '\');
+    run;
+
+    /* 2. Loop through matching files and perform comparison */
+    %local i num_files base_file compare_file base_ds compare_ds;
+    proc sql noprint;
+        select count(*) into :num_files from all_files;
+    quit;
+
+    %do i = 1 %to &num_files;
+        proc sql noprint;
+            select base_path, compare_path
+            into :base_file, :compare_file
+            from all_files
+            where _n_ = &i;
+        quit;
+
+        /* Create temporary SAS datasets from CSVs */
+        proc import datafile="&base_file" out=base_ds replace dbms=csv; run;
+        proc import datafile="&compare_file" out=compare_ds replace dbms=csv; run;
+
+        /* Compare datasets */
+        proc compare base=base_ds compare=compare_ds out=compare_out_&i outnoequal outbase outcomp;
+            title "Comparison of &base_name and &compare_name";
+        run;
+
+        /* Append results to a master comparison dataset */
+        proc append base=master_comparison data=compare_out_&i force; run; /* Create master_comparison if it doesn't exist */
+
+    %end;
+
+    /* 3. Export consolidated results to Excel */
+    ods excel file="&output_excel";
+        proc print data=master_comparison;
+            title "CSV Folder Comparison Report";
+        run;
+    ods excel close;
+
+%mend;
+
+/* Example usage: */
+%CompareCsvFolders(base_folder='C:\Data\FolderA', compare_folder='C:\Data\FolderB', output_excel='C:\Reports\ComparisonReport.xlsx');

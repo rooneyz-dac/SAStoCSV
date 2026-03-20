@@ -1,0 +1,103 @@
+/* Define folder paths and output location */
+%let folder1 = C:\path\to\first\folder;
+%let folder2 = C:\path\to\second\folder;
+%let output_excel = C:\path\to\output\comparison_results.xlsx;
+
+/* Get list of CSV files from both folders */
+filename folder1 pipe "dir ""&folder1\*.csv"" /b";
+filename folder2 pipe "dir ""&folder2\*.csv"" /b";
+
+/* Read file lists */
+data files1;
+    infile folder1 truncover;
+    input filename $100.;
+    folder = 1;
+run;
+
+data files2;
+    infile folder2 truncover;
+    input filename $100.;
+    folder = 2;
+run;
+
+/* Compare files and create summary */
+proc sql;
+    create table file_comparison as
+    select coalesce(a.filename, b.filename) as filename,
+           case when a.filename is not null and b.filename is not null then 'Both'
+                when a.filename is not null then 'Folder1 Only'
+                when b.filename is not null then 'Folder2 Only'
+           end as status
+    from files1 a
+    full join files2 b on a.filename = b.filename;
+quit;
+
+/* Macro to compare matching files */
+%macro compare_files;
+    /* Get list of matching files */
+    proc sql noprint;
+        select filename into :filelist separated by '|'
+        from file_comparison
+        where status = 'Both';
+    quit;
+
+    /* Create empty dataset for results */
+    data detailed_comparison;
+        length filename $100 rows_folder1 rows_folder2 8 rows_match $3;
+        stop;
+    run;
+
+    /* Loop through each matching file */
+    %let i = 1;
+    %let fname = %scan(&filelist, &i, |);
+    %do %while(&fname ne );
+        /* Import from folder1 */
+        proc import datafile="&folder1.\&fname"
+            out=temp1 dbms=csv replace;
+            getnames=yes;
+        run;
+
+        /* Import from folder2 */
+        proc import datafile="&folder2.\&fname"
+            out=temp2 dbms=csv replace;
+            getnames=yes;
+        run;
+
+        /* Get row counts */
+        proc sql noprint;
+            select count(*) into :rows1 trimmed from temp1;
+            select count(*) into :rows2 trimmed from temp2;
+        quit;
+
+        /* Append results */
+        data _temp;
+            length filename $100;
+            filename = "&fname";
+            rows_folder1 = &rows1;
+            rows_folder2 = &rows2;
+            rows_match = ifc(rows_folder1 = rows_folder2, 'Yes', 'No');
+        run;
+
+        proc append base=detailed_comparison data=_temp force;
+        run;
+
+        %let i = %eval(&i + 1);
+        %let fname = %scan(&filelist, &i, |);
+    %end;
+%mend;
+
+/* Call the macro to compare matching files */
+%compare_files;
+
+/* Export results to Excel */
+proc export data=file_comparison
+    outfile="&output_excel"
+    dbms=xlsx replace;
+    sheet="File_Summary";
+run;
+
+proc export data=detailed_comparison
+    outfile="&output_excel"
+    dbms=xlsx replace;
+    sheet="Detailed_Comparison";
+run;

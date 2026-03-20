@@ -1,0 +1,406 @@
+/*--------------------------------------------------------------------
+  Script Name : sas_convert_dirs.sas
+  Purpose     : Convert .sas7bdat files to XPT (DAC_XPT) and .xpt files
+                to .sas7bdat (DAC_SDTM), based on input/output folders.
+
+  Example usage from Windows CLI:
+
+  Method 1 - Using environment variables (recommended):
+      set INDIR=C:\path\to\input
+      set OUTDIR=C:\path\to\output
+      sas.exe -sysin c:\path\to\sas_convert_dirs.sas
+
+  Method 2 - Using -sysparm:
+      sas.exe -sysin c:\path\to\sas_convert_dirs.sas ^
+          -sysparm "INDIR=C:\path\to\input;OUTDIR=C:\path\to\output"
+
+  The script will:
+  - Read all files from INDIR
+  - Convert .sas7bdat files to .xpt in OUTDIR/DAC_XPT
+  - Convert .xpt files to .sas7bdat in OUTDIR/DAC_SDTM
+  - Only create output folders if needed
+  - Log all errors to xpt_error_log.txt in OUTDIR
+ --------------------------------------------------------------------*/
+
+%macro sas_convert_dirs(inDir=, outDir=);
+
+    %put DEBUG: ===== Starting sas_convert_dirs macro =====;
+    %put DEBUG: Initial inDir = &inDir.;
+    %put DEBUG: Initial outDir = &outDir.;
+
+    /* Basic parameter validation */
+    %if %length(&inDir.) = 0 or %length(&outDir.) = 0 %then %do;
+        %put ERROR: Both inDir and outDir parameters are required.;
+        %return;
+    %end;
+
+    /* Normalize paths (remove surrounding quotes and trailing slash) */
+    %let inDir  = %sysfunc(dequote(&inDir.));
+    %let outDir = %sysfunc(dequote(&outDir.));
+
+    %put DEBUG: After dequote - inDir = &inDir.;
+    %put DEBUG: After dequote - outDir = &outDir.;
+
+    %if %substr(&inDir., %length(&inDir.), 1) = %str(/) or
+        %substr(&inDir., %length(&inDir.), 1) = %str(\) %then
+        %let inDir = %substr(&inDir., 1, %eval(%length(&inDir.)-1));
+
+    %if %substr(&outDir., %length(&outDir.), 1) = %str(/) or
+        %substr(&outDir., %length(&outDir.), 1) = %str(\) %then
+        %let outDir = %substr(&outDir., 1, %eval(%length(&outDir.)-1));
+
+    %put DEBUG: After trailing slash removal - inDir = &inDir.;
+    %put DEBUG: After trailing slash removal - outDir = &outDir.;
+
+    /* Initialize error log file */
+    %global ERRLOG_PATH;
+    %let ERRLOG_PATH = &outDir./xpt_error_log.txt;
+
+    filename errlog "&ERRLOG_PATH.";
+
+    data _null_;
+        file errlog;
+        put "========================================";
+        put "XPT Conversion Error Log";
+        put "Started: " "&SYSDATE9." " &SYSTIME.";
+        put "Input Directory: &inDir.";
+        put "Output Directory: &outDir.";
+        put "========================================";
+        put " ";
+    run;
+
+    filename errlog clear;
+
+    %put DEBUG: Error log initialized at: &ERRLOG_PATH.;
+
+    /* Assign fileref to input directory and check it exists */
+    filename inDirRef "&inDir.";
+
+    %if %sysfunc(fexist(inDirRef)) = 0 %then %do;
+        %put ERROR: Input directory &inDir. does not exist or is not accessible.;
+
+        filename errlog "&ERRLOG_PATH." mod;
+        data _null_;
+            file errlog;
+            put "FATAL ERROR: Input directory does not exist or is not accessible";
+            put "Directory: &inDir.";
+            put "Time: " "&SYSTIME.";
+            put " ";
+        run;
+        filename errlog clear;
+
+        filename inDirRef clear;
+        %return;
+    %end;
+
+    %put DEBUG: Input directory verified: &inDir.;
+    filename inDirRef clear;
+
+    /* Define output subfolders (names only; not created yet) */
+    %let xptDir  = &outDir./DAC_XPT;
+    %let sdtmDir = &outDir./DAC_SDTM;
+
+    %put DEBUG: xptDir = &xptDir.;
+    %put DEBUG: sdtmDir = &sdtmDir.;
+
+    options noxwait noxsync;
+
+    /* List files in input directory via OS pipe */
+    %if %index(%upcase(&sysscp.),WIN) %then %do;
+        %put DEBUG: Using Windows dir command;
+        filename listPipe pipe "dir /b ""&inDir.""";
+    %end;
+    %else %do;
+        %put DEBUG: Using Unix ls command;
+        filename listPipe pipe "ls ""&inDir.""";
+    %end;
+
+    data file_list;
+        length fname $256.;
+        infile listPipe truncover;
+        input fname $256.;
+        if scan(fname, -1, '.') ne '' then output;
+    run;
+
+    %put DEBUG: File list created;
+
+    filename listPipe clear;
+
+    /* Determine if we actually need each output folder */
+    %let needXPT  = 0;
+    %let needSDTM = 0;
+
+    data _null_;
+        set file_list end=eof;
+        length ext $10;
+        ext = lowcase(scan(fname, -1, '.'));
+        if ext = 'sas7bdat' then do;
+            call symputx('needXPT',  1, 'l');
+            put "DEBUG: Found .sas7bdat file: " fname;
+        end;
+        if ext = 'xpt' then do;
+            call symputx('needSDTM', 1, 'l');
+            put "DEBUG: Found .xpt file: " fname;
+        end;
+    run;
+
+    %put DEBUG: needXPT = &needXPT.;
+    %put DEBUG: needSDTM = &needSDTM.;
+
+    /* Create output folders only if needed */
+    %if &needXPT. = 1 %then %do;
+        %put DEBUG: Creating XPT output folder: &xptDir.;
+        %if %index(%upcase(&sysscp.),WIN) %then %do;
+            %sysexec if not exist "&xptDir." mkdir "&xptDir.";
+        %end;
+        %else %do;
+            %sysexec mkdir -p "&xptDir.";
+        %end;
+    %end;
+    %else %do;
+        %put DEBUG: No .sas7bdat files found - skipping XPT folder creation;
+    %end;
+
+    %if &needSDTM. = 1 %then %do;
+        %put DEBUG: Creating SDTM output folder: &sdtmDir.;
+        %if %index(%upcase(&sysscp.),WIN) %then %do;
+            %sysexec if not exist "&sdtmDir." mkdir "&sdtmDir.";
+        %end;
+        %else %do;
+            %sysexec mkdir -p "&sdtmDir.";
+        %end;
+    %end;
+    %else %do;
+        %put DEBUG: No .xpt files found - skipping SDTM folder creation;
+    %end;
+
+    /* Loop over files and dispatch to proper conversion macro */
+    %put DEBUG: Starting file conversion loop;
+    data _null_;
+        set file_list;
+        length ext $10 base $256 inPath $512;
+        ext  = lowcase(scan(fname, -1, '.'));
+        base = scan(fname, 1, '.');
+
+        inPath = cats("&inDir./", fname);
+
+        /* sas7bdat -> XPT into DAC_XPT (only if that folder was needed/created) */
+        if ext = 'sas7bdat' and &needXPT. = 1 then do;
+            put "DEBUG: Converting .sas7bdat to .xpt: " fname;
+            call execute('%nrstr(%sas_to_xpt(' ||
+                         'in='    || quote(trim(inPath))         || ', ' ||
+                         'outDir='|| quote(trim("&xptDir."))     || ', ' ||
+                         'mem='   || quote(trim(base))           || '));');
+        end;
+
+        /* XPT -> sas7bdat into DAC_SDTM (only if that folder was needed/created) */
+        else if ext = 'xpt' and &needSDTM. = 1 then do;
+            put "DEBUG: Converting .xpt to .sas7bdat: " fname;
+            call execute('%nrstr(%xpt_to_sas(' ||
+                         'in='    || quote(trim(inPath))         || ', ' ||
+                         'outDir='|| quote(trim("&sdtmDir."))    || '));');
+        end;
+    run;
+
+    /* Write completion message to error log */
+    filename errlog "&ERRLOG_PATH." mod;
+    data _null_;
+        file errlog;
+        put "========================================";
+        put "Conversion process completed";
+        put "Ended: " "&SYSDATE9." " &SYSTIME.";
+        put "========================================";
+    run;
+    filename errlog clear;
+
+    %put DEBUG: ===== Completed sas_convert_dirs macro =====;
+
+%mend sas_convert_dirs;
+
+
+/* Helper: sas7bdat -> XPT, writing XPT into outDir with name mem.xpt */
+%macro sas_to_xpt(in=, outDir=, mem=);
+    %local srcDir filePart rc;
+
+    %put DEBUG: sas_to_xpt called - in=&in., outDir=&outDir., mem=&mem.;
+
+    %let filePart = %scan(&in., -1, %str(/\));
+    %let srcDir   = %substr(&in., 1, %length(&in.) - %length(&filePart.) - 1);
+
+    %put DEBUG: srcDir = &srcDir.;
+    %put DEBUG: Output file will be: &outDir./&mem..xpt;
+
+    /* Capture errors during conversion */
+    %let rc = 0;
+
+    libname _src "&srcDir.";
+
+    %if &syslibrc. ne 0 %then %do;
+        %let rc = 1;
+        filename errlog "&ERRLOG_PATH." mod;
+        data _null_;
+            file errlog;
+            put "ERROR: Failed to assign library for source directory";
+            put "File: &mem..sas7bdat";
+            put "Source Directory: &srcDir.";
+            put "Time: " "&SYSTIME.";
+            put " ";
+        run;
+        filename errlog clear;
+        %return;
+    %end;
+
+    filename xptout "&outDir./&mem..xpt";
+
+    proc copy in=_src out=xptout memtype=data;
+        select &mem.;
+    run;
+
+    %if &syserr. ne 0 and &syserr. ne 4 %then %do;
+        filename errlog "&ERRLOG_PATH." mod;
+        data _null_;
+            file errlog;
+            put "ERROR: Failed to convert sas7bdat to XPT";
+            put "File: &mem..sas7bdat";
+            put "Source: &in.";
+            put "Destination: &outDir./&mem..xpt";
+            put "SYSERR: &syserr.";
+            put "Time: " "&SYSTIME.";
+            put " ";
+        run;
+        filename errlog clear;
+    %end;
+    %else %do;
+        %put DEBUG: Conversion complete for &mem.;
+    %end;
+
+    filename xptout clear;
+    libname _src clear;
+%mend sas_to_xpt;
+
+
+/* Helper: XPT -> sas7bdat, exporting into outDir as a SAS data set */
+%macro xpt_to_sas(in=, outDir=);
+    %local mem rc;
+
+    %put DEBUG: xpt_to_sas called - in=&in., outDir=&outDir.;
+
+    %let mem = %scan(%scan(&in., -1, %str(/\)), 1, .);
+
+    %put DEBUG: Extracted member name: &mem.;
+    %put DEBUG: Output file will be: &outDir./&mem..sas7bdat;
+
+    %let rc = 0;
+
+    filename xptin "&in.";
+
+    %if &syserr. ne 0 %then %do;
+        %let rc = 1;
+        filename errlog "&ERRLOG_PATH." mod;
+        data _null_;
+            file errlog;
+            put "ERROR: Failed to assign fileref for XPT file";
+            put "File: &mem..xpt";
+            put "Source: &in.";
+            put "Time: " "&SYSTIME.";
+            put " ";
+        run;
+        filename errlog clear;
+        filename xptin clear;
+        %return;
+    %end;
+
+    libname sdtm "&outDir.";
+
+    %if &syslibrc. ne 0 %then %do;
+        %let rc = 1;
+        filename errlog "&ERRLOG_PATH." mod;
+        data _null_;
+            file errlog;
+            put "ERROR: Failed to assign library for output directory";
+            put "File: &mem..xpt";
+            put "Output Directory: &outDir.";
+            put "Time: " "&SYSTIME.";
+            put " ";
+        run;
+        filename errlog clear;
+        filename xptin clear;
+        %return;
+    %end;
+
+    proc copy in=xptin out=sdtm memtype=data;
+        select &mem.;
+    run;
+
+    %if &syserr. ne 0 and &syserr. ne 4 %then %do;
+        filename errlog "&ERRLOG_PATH." mod;
+        data _null_;
+            file errlog;
+            put "ERROR: Failed to convert XPT to sas7bdat";
+            put "File: &mem..xpt";
+            put "Source: &in.";
+            put "Destination: &outDir./&mem..sas7bdat";
+            put "SYSERR: &syserr.";
+            put "Time: " "&SYSTIME.";
+            put " ";
+        run;
+        filename errlog clear;
+    %end;
+    %else %do;
+        %put DEBUG: Conversion complete for &mem.;
+    %end;
+
+    filename xptin clear;
+    libname sdtm clear;
+%mend xpt_to_sas;
+
+
+/* Initialize global macro variables and read from environment */
+%global INDIR OUTDIR;
+
+%put DEBUG: ===== Starting parameter resolution =====;
+%put DEBUG: SYSPARM = &sysparm.;
+
+/* Try reading from Windows environment variables */
+%let INDIR = %sysget(INDIR);
+%let OUTDIR = %sysget(OUTDIR);
+
+%put DEBUG: After %sysget - INDIR = &INDIR.;
+%put DEBUG: After %sysget - OUTDIR = &OUTDIR.;
+
+/* If environment variables are empty, check for -sysparm parameters */
+%if %length(&INDIR.) = 0 or %length(&OUTDIR.) = 0 %then %do;
+    %put DEBUG: Environment variables empty, checking -sysparm;
+    %if %length(&sysparm.) > 0 %then %do;
+        %put DEBUG: Parsing -sysparm: &sysparm.;
+        /* Parse sysparm for INDIR and OUTDIR */
+        %let INDIR = %scan(&sysparm., 1, %str(;));
+        %let OUTDIR = %scan(&sysparm., 2, %str(;));
+
+        %put DEBUG: After scan - INDIR = &INDIR.;
+        %put DEBUG: After scan - OUTDIR = &OUTDIR.;
+
+        /* Extract values after = sign */
+        %let INDIR = %substr(&INDIR., %index(&INDIR., =) + 1);
+        %let OUTDIR = %substr(&OUTDIR., %index(&OUTDIR., =) + 1);
+
+        %put DEBUG: After extraction - INDIR = &INDIR.;
+        %put DEBUG: After extraction - OUTDIR = &OUTDIR.;
+    %end;
+    %else %do;
+        %put DEBUG: No -sysparm provided;
+    %end;
+%end;
+
+/* Execute the macro with the resolved parameters */
+%if %length(&INDIR.) > 0 and %length(&OUTDIR.) > 0 %then %do;
+    %put DEBUG: Calling sas_convert_dirs with INDIR=&INDIR., OUTDIR=&OUTDIR.;
+    %sas_convert_dirs(inDir=&INDIR., outDir=&OUTDIR.);
+%end;
+%else %do;
+    %put ERROR: INDIR and OUTDIR must be set via environment variables or -sysparm.;
+    %put ERROR: Example: set INDIR=C:\input and set OUTDIR=C:\output before running SAS;
+    %put DEBUG: Final values - INDIR=&INDIR., OUTDIR=&OUTDIR.;
+%end;
+
+%put DEBUG: ===== Script execution complete =====;

@@ -1,0 +1,138 @@
+/*------------------------------------------------------------------*
+| PROGRAM NAME  : variable_info_cli.sas
+| SHORT DESC    : Creates a variable information document with CLI
+|                 parameter support
+*------------------------------------------------------------------*
+| CREATED BY    : Modified for CLI usage
+| DATE CREATED  : 2025-01-22
+*------------------------------------------------------------------*
+| PURPOSE
+| Create a variable information table for a designated library with
+| CLI parameter support for automated workflows.
+|
+| USAGE:
+|   sas -sysparm "input_folder|output_folder" -sysin variable_info_cli.sas
+|
+| EXAMPLES:
+|   sas -sysparm "C:\data\input|C:\data\output" -sysin variable_info_cli.sas
+|
+*------------------------------------------------------------------*/
+
+%macro variable_info_cli;
+    /**Parse SYSPARM for input and output paths**/
+    %local sysparm_value indir outdir pipe_pos;
+    %let sysparm_value = &sysparm;
+    %put DEBUG: Raw SYSPARM value = &sysparm_value;
+
+    %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+    %put DEBUG: Pipe position = &pipe_pos;
+
+    %if &pipe_pos > 0 %then %do;
+        %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+        %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+    %end;
+    %else %do;
+        %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+        %abort;
+    %end;
+
+    %put DEBUG: Input Directory = &indir;
+    %put DEBUG: Output Directory = &outdir;
+
+    /**Validate directories exist**/
+    %local indir_exist outdir_exist;
+    %let indir_exist = %sysfunc(fileexist(&indir));
+    %let outdir_exist = %sysfunc(fileexist(&outdir));
+
+    %put DEBUG: Input directory exists = &indir_exist;
+    %put DEBUG: Output directory exists = &outdir_exist;
+
+    %if &indir_exist = 0 %then %do;
+        %put ERROR: Input directory does not exist: &indir;
+        %abort;
+    %end;
+
+    %if &outdir_exist = 0 %then %do;
+        %put ERROR: Output directory does not exist: &outdir;
+        %abort;
+    %end;
+
+    /**Create DAC_Documents folder if it doesn't exist**/
+    %local doc_dir doc_exist rc;
+    %let doc_dir = &outdir\DAC_Documents;
+    %let doc_exist = %sysfunc(fileexist(&doc_dir));
+
+    %if &doc_exist = 0 %then %do;
+        %put DEBUG: Creating directory &doc_dir;
+        %let rc = %sysfunc(dcreate(DAC_Documents, &outdir));
+        %if &rc = %then %do;
+            %put ERROR: Failed to create directory &doc_dir;
+            %abort;
+        %end;
+        %put DEBUG: Successfully created &doc_dir;
+    %end;
+    %else %do;
+        %put DEBUG: Directory &doc_dir already exists;
+    %end;
+
+    /**Assign library to input directory**/
+    libname INLIB "&indir";
+
+    %if %sysfunc(libref(INLIB)) ^= 0 %then %do;
+        %put ERROR: Failed to assign library to &indir;
+        %abort;
+    %end;
+
+    /**Set output file path**/
+    %local out_file libname_text;
+    %let libname_text = %scan(&indir, -1, \);
+    %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
+    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&libname_text,,'ka'))_%sysfunc(today(),yymmddn8.).xlsx;
+    %put DEBUG: Output file = &out_file;
+
+    /**Get variable information**/
+    ods output variables=allvarout;
+
+    proc contents data=INLIB._all_ memtype=data;
+    run;
+
+    /**Sort data by dataset and variable number**/
+    proc sort data=allvarout;
+        by member num;
+    run;
+
+    /**Create Excel output file with separate sheets per dataset**/
+    options nobyline;
+    ods excel file="&out_file"
+        options(sheet_name="#BYVAL(member)" embedded_titles='yes');
+
+    proc print data=allvarout noobs label;
+        by member;
+        pageby member;
+        title "Variables in #BYVAL(member) Dataset";
+        label member='Dataset Name'
+              num='Variable Number'
+              variable='Variable Name'
+              type='Type'
+              len='Length'
+              format='Format'
+              informat='Informat'
+              label='Variable Label';
+    run;
+
+    title;
+
+    ods excel close;
+
+    /**Clean up**/
+    proc datasets library=work nolist nodetails;
+        delete allvarout;
+    quit;
+
+    libname INLIB clear;
+
+    %put NOTE: Variable information document created: &out_file;
+
+%mend variable_info_cli;
+
+%variable_info_cli;
