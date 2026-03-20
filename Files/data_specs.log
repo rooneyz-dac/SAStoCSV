@@ -1,0 +1,997 @@
+1                                           The SAS System                16:55 Friday, March 20, 2026
+
+NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
+NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
+      Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
+NOTE: This session is executing on the X64_DSRV16  platform.
+
+
+
+NOTE: Updated analytical products:
+      
+      SAS/STAT 14.3
+      SAS/ETS 14.3
+      SAS/IML 14.3
+      SAS/QC 14.3
+
+NOTE: Additional host information:
+
+ X64_DSRV16 WIN 10.0.26100  Server
+
+NOTE: SAS initialization used:
+      real time           0.36 seconds
+      cpu time            0.29 seconds
+      
+1          /*------------------------------------------------------------------*
+2          | MACRO NAME  : data_specs_cli20260320
+3          | SHORT DESC  : Creates a specifications document on a library of
+4          |               datasets with CLI parameter support
+5          *------------------------------------------------------------------*
+6          | CREATED BY  : Modified for CLI usage
+7          | ORIGINAL    : Meyers, Jeffrey (07/28/2016)
+8          *------------------------------------------------------------------*
+9          | VERSION UPDATES:
+10         | 2026-03-20: Extended SYSPARM to support optional macro parameters
+11         |   - Optional params passed as key=value pairs after output dir
+12         | 2025-01-21: Modified to accept CLI parameters via SYSPARM
+13         |   - Added input/output path parsing from SYSPARM
+14         |   - Added automatic creation of DAC_Documents folder
+15         |   - Added path validation
+16         | See original data_specs macro for prior version history.
+17         *------------------------------------------------------------------*
+18         | PURPOSE
+19         | Create a data specifications sheet for all datasets in a
+20         | designated directory with CLI parameter support for automated
+21         | workflows. Allows for a quick look at the data within a library
+22         | or allows for a simple data dictionary to be built.
+23         | The macro outputs a report with three types of tables. The first
+24         | is a listing of the datasets included in the library along with
+25         | the number of rows, number of unique indexes, and number of
+26         | variables. The second table shows the number of variables that
+27         | exist across multiple datasets along with any different labels
+28         | given to them. The last type of table is built for each dataset
+29         | on a separate tab listing the variables and specs (label, format,
+30         | and values) for each.
+31         |
+32         | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+2                                           The SAS System                16:55 Friday, March 20, 2026
+
+33         | INPUT_DIRECTORY  = Path to the folder containing SAS datasets
+34         |                    (.sas7bdat) to be summarized
+35         | OUTPUT_DIRECTORY = Path to the folder where the DAC_Documents
+36         |                    subfolder and output file will be created.
+37         |                    Must exist prior to execution.
+38         |
+39         | 2.0: OPTIONAL SYSPARM PARAMETERS (pipe-delimited key=value pairs)
+40         | INDEX         = Allows the designation of multiple index variables
+41         |                 to determine number of patients or other interest
+42         |                 within a dataset.
+43         | CAT_THRESHOLD = Determines the number of variable levels that can
+44         |                 exist before the program will not output the
+45         |                 frequency and percentage of each level. If a
+46         |                 numeric variable exceeds this many levels then
+47         |                 distribution statistics will be used instead.
+48         |                 Must be greater than or equal to 0. Default: 10.
+49         | FORMAT        = For the summary of individual datasets this
+50         |                 determines if the variables will be listed in
+51         |                 CONDENSED (one row per variable), LONG (one
+52         |                 column), or WIDE (one row) format. Options are
+53         |                 LONG, CONDENSED, and WIDE. Default is LONG.
+54         | ORDER         = Determines how the variables will be ordered in
+55         |                 the dataset summary tabs. VARNUM will order by
+56         |                 the variable order in the dataset and NAME will
+57         |                 order alphabetically. Options are VARNUM and NAME.
+58         |                 Default is VARNUM.
+59         | WHERE         = Allows a WHERE clause to be used on the dictionary
+60         |                 table to subset the datasets included.
+61         | DEBUG         = Determines if notes are on/off and if temporary
+62         |                 datasets are cleaned up. Options are 0 (no notes,
+63         |                 datasets cleaned up) and 1 (notes shown, datasets
+64         |                 left behind). Default is 0.
+65         |
+66         | USAGE:
+67         |   sas -sysparm "input_directory|output_directory[|key=value|...]"
+68         |       -sysin data_specs_cli20260320.sas
+69         |
+70         | OUTPUT STRUCTURE:
+71         |   output_directory\
+72         |   └── DAC_Documents\
+73         |       └── data_specs_<libname>_<YYYYMMDD>.xlsx
+74         |           (summary sheet + one sheet per dataset)
+75         *------------------------------------------------------------------*
+76         | OPERATING SYSTEM COMPATIBILITY
+77         | SAS v9.4 or Higher: Yes
+78         *------------------------------------------------------------------*
+79         | MACRO CALL
+80         |
+81         | Not applicable. Script is invoked directly via the SAS command
+82         | line using -sysin and -sysparm. Optional parameters are passed
+83         | as pipe-delimited key=value pairs within SYSPARM.
+84         |
+85         | Equivalent direct macro call (for reference):
+86         |   %data_specs_cli(
+3                                           The SAS System                16:55 Friday, March 20, 2026
+
+87         |       index=,
+88         |       cat_threshold=10,
+89         |       where=,
+90         |       format=long,
+91         |       order=varnum,
+92         |       debug=0
+93         |   );
+94         *------------------------------------------------------------------*
+95         | EXAMPLES
+96         |
+97         | Basic usage (default options):
+98         |   sas -sysparm "C:\data\input|C:\data\output"
+99         |       -sysin data_specs_cli20260320.sas
+100        |
+101        | Wide format, alphabetical variable order:
+102        |   sas -sysparm "C:\data\input|C:\data\output|format=wide|order=name"
+103        |       -sysin data_specs_cli20260320.sas
+104        |
+105        | With index variable and custom category threshold:
+106        |   sas -sysparm "C:\data\input|C:\data\output|index=USUBJID|cat_threshold=5"
+107        |       -sysin data_specs_cli20260320.sas
+108        |
+109        | Full options example with debug enabled:
+110        |   sas -sysparm
+110      ! "C:\data\input|C:\data\output|index=USUBJID|format=condensed|order=name|cat_threshold=15|de
+110      ! bug=1"
+111        |       -sysin data_specs_cli20260320.sas
+112        *------------------------------------------------------------------*
+113        | This program is free software; you can redistribute it and/or
+114        | modify it under the terms of the GNU General Public License as
+115        | published by the Free Software Foundation; either version 2 of
+116        | the License, or (at your option) any later version.
+117        |
+118        | This program is distributed in the hope that it will be useful,
+119        | but WITHOUT ANY WARRANTY; without even the implied warranty of
+120        | MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+121        | General Public License for more details.
+122        *------------------------------------------------------------------*/
+123        
+124        %macro data_specs_cli(
+125            /*Optional Parameters*/
+126            index=,cat_threshold=10,where=,format=long,order=varnum,
+127            debug=0);
+128        
+129            /**Save current options to reset after macro runs**/
+130            %local _mergenoby _notes _quotelenmax _starttime _listing;
+131            %let _starttime=%sysfunc(time());
+132            %let _notes=%sysfunc(getoption(notes));
+133            %let _mergenoby=%sysfunc(getoption(mergenoby));
+134            %let _quotelenmax=%sysfunc(getoption(quotelenmax));
+135        
+136            /*Set Options*/
+137            options NOQUOTELENMAX nonotes mergenoby=nowarn;
+138        
+4                                           The SAS System                16:55 Friday, March 20, 2026
+
+139            /**Parse SYSPARM for input and output paths**/
+140            %local sysparm_value indir outdir pipe_pos;
+141            %let sysparm_value = &sysparm;
+142            %put DEBUG: Raw SYSPARM value = &sysparm_value;
+143        
+144            %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+145            %put DEBUG: Pipe position = &pipe_pos;
+146        
+147            %if &pipe_pos > 0 %then %do;
+148                %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+149                %local remaining pipe2_pos;
+150                %let remaining = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+151        
+152                /* Check for additional pipe-separated optional parameters */
+153                %let pipe2_pos = %sysfunc(findc(&remaining, |));
+154                %if &pipe2_pos > 0 %then %do;
+155                    %let outdir = %substr(&remaining, 1, %eval(&pipe2_pos - 1));
+156                    %local extra_params ep_count ep_i ep_curr ep_name eq_pos ep_value;
+157                    %let extra_params = %substr(&remaining, %eval(&pipe2_pos + 1));
+158                    %let ep_count = %sysfunc(countw(&extra_params, |));
+159                    %do ep_i = 1 %to &ep_count;
+160                        %let ep_curr = %scan(&extra_params, &ep_i, |);
+161                        %let eq_pos = %sysfunc(findc(&ep_curr, =));
+162                        %if &eq_pos > 0 %then %do;
+163                            %let ep_name = %qupcase(%substr(&ep_curr, 1, %eval(&eq_pos - 1)));
+164                            %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
+165                            %if &ep_name = INDEX %then %let index = &ep_value;
+166                            %else %if &ep_name = CAT_THRESHOLD %then %do;
+167                                %if %sysevalf(%superq(ep_value)^=,boolean) %then %let cat_threshold
+167      !  = &ep_value;
+168                            %end;
+169                            %else %if &ep_name = FORMAT %then %do;
+170                                %if %sysevalf(%superq(ep_value)^=,boolean) %then %let format =
+170      ! &ep_value;
+171                            %end;
+172                            %else %if &ep_name = ORDER %then %do;
+173                                %if %sysevalf(%superq(ep_value)^=,boolean) %then %let order =
+173      ! &ep_value;
+174                            %end;
+175                            %else %if &ep_name = WHERE %then %let where = &ep_value;
+176                            %else %if &ep_name = DEBUG %then %do;
+177                                %if %sysevalf(%superq(ep_value)^=,boolean) %then %let debug =
+177      ! &ep_value;
+178                            %end;
+179                        %end;
+180                    %end;
+181                    %put DEBUG: Parsed extra params: index=&index cat_threshold=&cat_threshold
+181      ! format=&format order=&order debug=&debug;
+182                %end;
+183                %else %do;
+184                    %let outdir = &remaining;
+185                %end;
+186            %end;
+187            %else %do;
+5                                           The SAS System                16:55 Friday, March 20, 2026
+
+188                %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+189                %goto errhandl;
+190            %end;
+191        
+192            %put DEBUG: Input Directory = &indir;
+193            %put DEBUG: Output Directory = &outdir;
+194        
+195            /**Validate directories exist**/
+196            %local indir_exist outdir_exist;
+197            %let indir_exist = %sysfunc(fileexist(&indir));
+198            %let outdir_exist = %sysfunc(fileexist(&outdir));
+199        
+200            %put DEBUG: Input directory exists = &indir_exist;
+201            %put DEBUG: Output directory exists = &outdir_exist;
+202        
+203            %if &indir_exist = 0 %then %do;
+204                %put ERROR: Input directory does not exist: &indir;
+205                %goto errhandl;
+206            %end;
+207        
+208            %if &outdir_exist = 0 %then %do;
+209                %put ERROR: Output directory does not exist: &outdir;
+210                %goto errhandl;
+211            %end;
+212        
+213            /**Create DAC_Documents folder if it doesn't exist**/
+214            %local doc_dir doc_exist rc;
+215            %let doc_dir = &outdir\DAC_Documents;
+216            %let doc_exist = %sysfunc(fileexist(&doc_dir));
+217        
+218            %if &doc_exist = 0 %then %do;
+219                %put DEBUG: Creating directory &doc_dir;
+220                %let rc = %sysfunc(dcreate(DAC_Documents, &outdir));
+221                %if &rc = %then %do;
+222                    %put ERROR: Failed to create directory &doc_dir;
+223                    %goto errhandl;
+224                %end;
+225                %put DEBUG: Successfully created &doc_dir;
+226            %end;
+227            %else %do;
+228                %put DEBUG: Directory &doc_dir already exists;
+229            %end;
+230        
+231            /**Assign library to input directory**/
+232            libname inlib "&indir";
+233        
+234            %if %sysfunc(libref(inlib)) ^= 0 %then %do;
+235                %put ERROR: Failed to assign library to &indir;
+236                %goto errhandl;
+237            %end;
+238        
+239            /**Set output file path**/
+240            %local out_file libname_text;
+241            %let libname_text = %scan(&indir, -1, \);
+6                                           The SAS System                16:55 Friday, March 20, 2026
+
+242            %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
+243            %let out_file =
+243      ! &doc_dir\data_specs_%sysfunc(compress(&libname_text,,'ka'))_%sysfunc(today(),yymmddn8.).xls
+243      ! x;
+244            %put DEBUG: Output file = &out_file;
+245        
+246            /**See if the listing output is turned on**/
+247            proc sql noprint;
+248                select 1 into :_listing separated by '' from sashelp.vdest where
+248      ! upcase(destination)='LISTING';
+249            quit;
+250        
+251            /**Process Error Handling**/
+252            %if &sysver < 9.4 %then %do;
+253                %put ERROR: SAS must be version 9.4 or later;
+254                %goto errhandl;
+255            %end;
+256        
+257            %local nerror;
+258            %let nerror=0;
+259        
+260            /**Error Handling on Global Parameters**/
+261            %macro _gparmcheck(parm, parmlist);
+262                %local _test _z;
+263                %let _test=0;
+264                /**Check if values are in approved list**/
+265                %do _z=1 %to %sysfunc(countw(&parmlist,|,m));
+266                    %if %qupcase(%superq(&parm))=%qupcase(%scan(&parmlist,&_z,|,m)) %then %let
+266      ! _test=1;
+267                %end;
+268                %if &_test ^= 1 %then %do;
+269                    /**If not then throw error**/
+270                    %put ERROR: (Global: %qupcase(&parm)): %superq(&parm) is not a valid value;
+271                    %put ERROR: (Global: %qupcase(&parm)): Possible values are &parmlist;
+272                    %let nerror=%eval(&nerror+1);
+273                %end;
+274            %mend;
+275        
+276            /*Data display format*/
+277            %_gparmcheck(format,condensed|wide|long)
+278            /*Variable Order*/
+279            %_gparmcheck(order,varnum|name)
+280            /*Debug switch*/
+281            %_gparmcheck(debug,0|1)
+282        
+283            /**Error Handling on Global Model Numeric Variables**/
+284            %macro _gnumcheck(parm, min);
+285                /**Check if missing**/
+286                %if %sysevalf(%superq(&parm)^=,boolean) %then %do;
+287                    %if %sysfunc(notdigit(%sysfunc(compress(%superq(&parm),-.)))) > 0 %then %do;
+288                        /**Check if character value**/
+289                        %put ERROR: (Global: %qupcase(&parm)) Must be numeric.
+289      ! %qupcase(%superq(&parm)) is not valid.;
+290                        %let nerror=%eval(&nerror+1);
+7                                           The SAS System                16:55 Friday, March 20, 2026
+
+291                    %end;
+292                    %else %if %superq(&parm) < &min %then %do;
+293                        /**Makes sure number is not less than the minimum**/
+294                        %put ERROR: (Global: %qupcase(&parm)) Must be greater than %superq(min).
+294      ! %qupcase(%superq(&parm)) is not valid.;
+295                        %let nerror=%eval(&nerror+1);
+296                    %end;
+297                %end;
+298                %else %do;
+299                    /**Throw Error**/
+300                    %put ERROR: (Global: %qupcase(&parm)) Cannot be missing;
+301                    %put ERROR: (Global: %qupcase(&parm)) Possible values are numeric values
+301      ! greater than or equal to %superq(min);
+302                    %let nerror=%eval(&nerror+1);
+303                %end;
+304            %mend;
+305        
+306            /*Categories cut-off*/
+307            %_gnumcheck(cat_threshold,0);
+308        
+309            /*** If any errors exist, stop macro and send to end ***/
+310            %if &nerror > 0 %then %do;
+311                %put ERROR: &nerror pre-run errors listed;
+312                %put ERROR: Macro DATA_SPECS_CLI will cease;
+313                %goto errhandl;
+314            %end;
+315        
+316            %if &debug=1 %then %do;
+317                options notes mprint;
+318            %end;
+319        
+320            /*Creates dictionary table for library*/
+321            proc contents data=inlib._all_
+322                out=_specs_ (%if %sysevalf(%superq(where)^=,boolean) %then %do;
+323                             where=(&where)
+324                             %end;) noprint;
+325            run;
+326        
+327            /*Sorts by VARNUM or NAME*/
+328            proc sort data=_specs_;
+329                by memname %superq(order);
+330            run;
+331        
+332            /**Set up Data sets to insert into**/
+333            proc sql;
+334                /**Data set for specifications**/
+335                create table _data_specs_
+336                    (data_id num,
+337                    dsn char(300) 'Data Set Name (Label)',
+338                    var_name char(40) 'Name',
+339                    type char(10) 'Type',
+340                    length char(20) 'Length',
+341                    format char(40) 'Format',
+342                    informat char(40) 'Informat',
+8                                           The SAS System                16:55 Friday, March 20, 2026
+
+343                    label char(256) 'Label',
+344                    cat_values char(10000) 'Category Values',
+345                    spec char(30) 'Specification',
+346                    value char(10000) 'Value');
+347                /**Data set for high level summary of library**/
+348                create table _libn_summary_
+349                    (dsn char(300) 'Data Set Name',
+350                    obs num 'Observations',
+351                    unique_index num "Unique Index Values (%qupcase(%sysfunc(tranwrd(&index,|,%str(
+351      !  or )))))",
+352                    variables num 'Number of Variables');
+353                /**Data set for variables in multiple datasets**/
+354                create table _var_summary_
+355                    (var_name char(40) 'Variable Name',
+356                    dsn_list char(10000) 'Datasets Containing Variable',
+357                    labels char(10000) 'Variable Label(s)');
+358            quit;
+359        
+360            /*Gets list of datasets within library*/
+361            %local datalist;
+362            proc sql noprint;
+363                select distinct memname into :datalist separated by ' '
+364                    from _specs_;
+365            quit;
+366        
+367            /*Loops between datasets in library*/
+368            %local i j varlist curr_index n_numeric;
+369            %do i = 1 %to %sysfunc(countw(&datalist,%str( )));
+370                %put Progress: %scan(&datalist,&i,%str( )): &i of %sysfunc(countw(&datalist,%str(
+370      ! )));
+371                %local varlist&i;
+372                %let varlist&i=;
+373        
+374                /*Creates list of all variables in data set*/
+375                proc sql noprint;
+376                    select name into :varlist&i separated by ' '
+377                        from _specs_ where upcase(memname)=upcase("%scan(&datalist,&i,%str( ))");
+378                quit;
+379        
+380                %let curr_index=;
+381                /*Determine if index variables are present*/
+382                %local index_varn index_set j k l;
+383                %let index_varn=;%let index_set=;
+384                %if %sysevalf(%superq(index)^=,boolean) %then %do j = 1 %to
+384      ! %sysfunc(countw(&&varlist&i,%str( )));
+385                    %do k=1 %to %sysfunc(countw(%superq(index),|));
+386                        %if %sysevalf(%superq(index_set)=,boolean) or
+386      ! %sysevalf(%superq(index_set)=&k,boolean) %then %do l = 1 %to
+386      ! %sysfunc(countw(%scan(&index,&k,|),%str( )));
+387                            %if %sysevalf(%qupcase(%scan(&&varlist&i,&j,%str(
+387      ! )))=%qupcase(%qscan(%qscan(&index,&k,|),&l,%str( ))),boolean) %then %let
+387      ! index_varn=&index_varn &j;
+388                        %end;
+389                    %end;
+9                                           The SAS System                16:55 Friday, March 20, 2026
+
+390                %end;
+391        
+392                /*Creates macro variables for variable format and type*/
+393                data __temp;
+394                    set inlib.%scan(&datalist,&i,%str( ));
+395                    if _n_=1 then do;
+396                        %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+397                            %local v&j.format v&j.type;
+398                            call symput("v&j.format",vformat(%scan(&&varlist&i,&j,%str( ))));
+399                            call symput("v&j.type",vtype(%scan(&&varlist&i,&j,%str( ))));
+400                        %end;
+401                    end;
+402                    rename %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+402      ! %scan(&&varlist&i,&j,%str( ))=_var&j %end;;
+403                run;
+404        
+405                %if %sysevalf(%superq(index_varn)^=,boolean) %then %do;
+406                    proc sort data=__temp;
+407                        by %do j=1 %to %sysfunc(countw(&index_varn,%str( )));
+407      ! _var%scan(&index_varn,&j,%str( )) %end;;
+408                    run;
+409        
+410                    data __temp;
+411                        set __temp;
+412                        by %do j=1 %to %sysfunc(countw(&index_varn,%str( )));
+412      ! _var%scan(&index_varn,&j,%str( )) %end;;
+413                        if first._var%scan(&index_varn,%eval(%sysfunc(countw(&index_varn,%str(
+413      ! )))-1+1),%str( )) then _index_+1;
+414                    run;
+415                %end;
+416        
+417                /*Creates variable lists*/
+418                proc sql noprint;
+419                    /*Finds number of numeric values*/
+420                    select sum(ifn(type=1,1,0)) into :n_numeric separated by ' '
+421                        from _specs_ where upcase(memname)=upcase("%scan(&datalist,&i,%str( ))");
+422        
+423                    /*Inserts current dataset specs into table*/
+424                    insert into _data_specs_
+425                        select &i,
+426                        strip(memname)||
+427                           case(memlabel)
+428                               when '' then ''
+429                        else ' ('||strip(memlabel)||')' end,
+430                        name,
+431                        case(type)
+432                          when 1 then 'Numeric'
+433                          when 2 then 'Character'
+434                        else '' end,
+435                        strip(put(length,12.)),
+436                        format,
+437                        informat,
+438                        label,
+439                        '',
+10                                          The SAS System                16:55 Friday, March 20, 2026
+
+440                        '',
+441                        ''
+442                        from _specs_ where upcase(memname)=upcase("%scan(&datalist,&i,%str( ))");
+443        
+444                    /*Inserts high level dataset specs into library table*/
+445                    insert into _libn_summary_
+446                        select a.dsn,
+447                        a.nobs,
+448                        b.unique_index,
+449                        a.n
+450                        from (select distinct &i as data_id, strip(memname)||
+451                           case(memlabel)
+452                               when '' then ''
+453                            else ' ('||strip(memlabel)||')' end as dsn,nobs,count(distinct name) as
+453      !  n from _specs_
+454                                 where upcase(memname)=upcase("%scan(&datalist,&i,%str( ))") group
+454      ! by nobs) as a left join
+455                          %if %sysevalf(%superq(index_varn)^=,boolean) %then %do;
+456                             (select distinct &i as data_id,"%scan(&datalist,&i,%str( ))" as
+456      ! dsn,count(distinct _index_) as unique_index
+457                                from __temp) as b
+458                          %end;
+459                          %else %do;
+460                             (select distinct &i as data_id,"%scan(&datalist,&i,%str( ))" as dsn,0
+460      ! as unique_index
+461                                  from inlib.%scan(&datalist,&i,%str( ))) as b
+462                          %end;
+463                          on a.data_id=b.data_id;
+464        
+465                    /*Initializes and creates macro variables for levels of each variable*/
+466                    %local n nothing;
+467                    %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+468                       %local n_&j levels_&j;
+469                       %let n_&j=;%let levels_&j=;
+470                    %end;
+471        
+472                    select %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+473                        count(distinct _var&j),
+474                        %end;
+475                        count(*) into
+476                        %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+477                          :n_&j,
+478                        %end; :n from __temp;
+479                quit;
+480        
+481                %local n_frq n_dist n_miss;
+482                %let n_frq=;%let n_dist=;%let n_miss=;
+483                %if &n > 0 %then %do;
+484                    /**Determine how each variable should be summarized**/
+485                    %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+486                        %if %superq(v&j.type)=N %then %do;
+487                            %if %superq(n_&j) <= &cat_threshold %then %let n_frq=&n_frq &j;
+488                            %else %let n_dist=&n_dist &j;
+489                        %end;
+11                                          The SAS System                16:55 Friday, March 20, 2026
+
+490                        %else %do;
+491                            %if %superq(n_&j) <= &cat_threshold %then %let n_frq=&n_frq &j;
+492                            %else %let n_miss=&n_miss &j;
+493                        %end;
+494                    %end;
+495        
+496                    ods select none;
+497                    ods noresults;
+498        
+499                    /*Creates frequencies for all variables under the threshold*/
+500                    %if %sysevalf(%superq(n_frq)^=,boolean) %then %do;
+501                        proc freq data=__temp;
+502                            table %do j = 1 %to %sysfunc(countw(&n_frq,%str( )));
+503                                      _var%scan(&n_frq,&j,%str( ))
+504                                  %end; / missing;
+505                            ods output onewayfreqs=_frqs_;
+506                        run;
+507                    %end;
+508        
+509                    /*Creates distributions for all numeric variables above the threshold*/
+510                    %if %sysevalf(%superq(n_dist)^=,boolean) %then %do;
+511                        proc means data=__temp missing noprint;
+512                            var %do j = 1 %to %sysfunc(countw(&n_dist,%str( )));
+513                                     _var%scan(&n_dist,&j,%str( ))
+514                                 %end;;
+515                            output out=_distribution_ n= nmiss= mean= std= median= min= max= /
+515      ! autoname;
+516                        run;
+517                    %end;
+518        
+519                    ods select all;
+520                    ods results;
+521                %end;
+522        
+523                proc sql noprint;
+524                    /*Creates macro variables for values of variables*/
+525                    %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+526                        /*If number of distinct levels are less than the threshold*/
+527                        %if &n > 0 and %superq(n_&j) <= &cat_threshold %then %do;
+528                            select case (missing(f__var&j))
+529                                when 1 then 'Missing'
+530                                else case
+531                                     when %if %superq(v&j.type)=N %then %do;
+531      ! strip(put(_var&j,best12.)) %end;
+532                                          %else %do; strip(_var&j) %end; = strip(f__var&j) then
+532      ! strip(f__var&j)
+533                                     else %if %superq(v&j.type)=N %then %do;
+533      ! strip(put(_var&j,best12.)) %end;
+534                                          %else %do; strip(_var&j) %end; ||' (' ||
+534      ! strip(f__var&j)||')' end end
+535                                ||': '||strip(put(frequency,comma12.))||'
+535      ! ('||strip(put(percent,12.1))||'%)'
+536                                into :levels_&j separated by '^n '
+537                                from _frqs_ where upcase(table)=upcase("Table _var&j");
+12                                          The SAS System                16:55 Friday, March 20, 2026
+
+538                        %end;
+539                        %else %if &n > 0 and %superq(v&j.type)=N and
+539      ! %sysevalf(%superq(n_dist)^=,boolean) %then %do;
+540                            /*If number of distinct levels are greater than the threshold and
+540      ! variable is numeric*/
+541                            select 'N (N Missing): '||strip(put(_var&j._n,comma12.0))||'
+541      ! ('||strip(put(_var&j._nmiss,comma12.0))||')^n '||
+542                                'Median: '||strip(Put(_var&j._median,&&v&j.format))||'^n '||
+543                                'Range: '||strip(put(_var&j._min,&&v&j.format))||' -
+543      ! '||strip(put(_var&j._max,&&v&j.format))
+544                                into :levels_&j separated by '' from _distribution_;
+545                        %end;
+546                        /*Otherwise leave blank*/
+547                        %else %do;
+548                            select 'N (N Missing): ' ||strip(put(sum(^missing(_var&j)),12.0)) ||'
+548      ! ('||
+549                                strip(put(sum(missing(_var&j)),12.0)) ||')' into :levels_&j
+549      ! separated by ''
+550                                from __temp;
+551                        %end;
+552                    %end;
+553        
+554                    /*Delete temporary datasets*/
+555                    %if %sysevalf(%superq(n_frq)^=,boolean) %then %do;
+556                        drop table _frqs_;
+557                    %end;
+558                    %if %sysevalf(%superq(n_dist)^=,boolean) %then %do;
+559                        drop table _distribution_;
+560                    %end;
+561        
+562                    /*Update formats and values into the specifications data set*/
+563                    update _data_specs_
+564                        set format=case (upcase(var_name))
+565                        %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+566                          when upcase("%scan(&&varlist&i,&j,%str( ))") then "%superq(v&j.format)"
+567                        %end;
+568                        else '' end,
+569                        cat_values=case (upcase(var_name))
+570                        %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+571                          when upcase("%scan(&&varlist&i,&j,%str( ))") then "%superq(levels_&j)"
+572                        %end;
+573                        else '' end
+574                        where strip(scan(upcase(dsn),1,'('))=upcase("%scan(&datalist,&i,%str( ))");
+575                    drop table __temp;
+576                quit;
+577            %end;
+578        
+579            /*Transposes some specifications to long form*/
+580            data _data_specs_;
+581                set _data_specs_;
+582        
+583                spec='Variable';value=strip(var_name);output;
+584                spec='Label';value=strip(label);output;
+585                spec='Format';
+13                                          The SAS System                16:55 Friday, March 20, 2026
+
+586                if upcase(type)='NUMERIC' then value='Numeric with format '||strip(format);
+587                else if upcase(type)='CHARACTER' then value='Character string of length
+587      ! '||strip(length)||' and format '||
+588                    strip(format);
+589                output;
+590                %if %sysevalf(%qupcase(&format)=LONG, boolean) %then %do; if ^missing(cat_values)
+590      ! then do; %end;
+591                    spec='Values';value=strip(cat_values);output;
+592                %if %sysevalf(%qupcase(&format)=LONG, boolean) %then %do; end; %end;
+593            run;
+594        
+595            /*Transpose into condensed form*/
+596            proc transpose data=_data_specs_ out=_data_specs_condensed (drop=_name_ _label_);
+597                by data_id notsorted var_name;
+598                id spec;
+599                var value;
+600            run;
+601        
+602            /*Merges variables into wide dataset*/
+603            %if %sysevalf(%qupcase(&format)=WIDE, boolean) %then %do;
+604                %do i = 1 %to %sysfunc(countw(&datalist,%str( )));
+605                    data _data_specs_wide&i;
+606                        merge
+607                            %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+608                                _data_specs_ (keep=data_id dsn spec value var_name
+608      ! where=(data_id=&i and upcase(var_name)=upcase("%scan(%superq(varlist&i),&j,%str( ))"))
+609                                              rename=(var_name=var_name&j value=value&j))
+610                            %end;;
+611                    run;
+612                %end;
+613                data _data_specs_wide;
+614                    set %do i = 1 %to %sysfunc(countw(&datalist,%str( ))); _data_specs_wide&i %end;
+614      ! ;
+615                run;
+616            %end;
+617        
+618            /*Completes variables across multiple datasets table*/
+619            proc sql noprint;
+620                %local multilist;
+621                %let multilist=;
+622                /*Find variables in multiple datasets*/
+623                select distinct upcase(name) into :multilist separated by ' '
+624                    from _specs_ where upcase(name) ^in("%sysfunc(tranwrd(%upcase(&index),%str( ),
+624      ! " "))")
+625                    group by upcase(name) having count(*)>1;
+626        
+627                /*Find Dataset name and label for variables*/
+628                %do i = 1 %to %sysfunc(countw(&multilist,%str( )));
+629                    %local dlist&i dlabels&i;
+630                    %let dlist&i=;%let dlabels&i=;
+631                    select memname into :dlist&i separated by ', '
+632                        from _specs_ where upcase(name)="%scan(&multilist,&i,%str( ))";
+633                    select distinct strip(label) into :dlabels&i separated by '^n'
+634                        from _specs_ where upcase(name)="%scan(&multilist,&i,%str( ))";
+14                                          The SAS System                16:55 Friday, March 20, 2026
+
+635                %end;
+636        
+637                /*Insert values into dataset*/
+638                %if %sysevalf(%superq(multilist)^=,boolean) %then %do;
+639                    insert into _var_summary_
+640                        %do i = 1 %to %sysfunc(countw(&multilist,%str( )));
+641                            set var_name="%scan(&multilist,&i,%str( ))",
+642                                dsn_list="%superq(dlist&i)",
+643                                labels="%superq(dlabels&i)"
+644                        %end;
+645                        ;
+646                %end;
+647            quit;
+648        
+649            /*Print out datasets*/
+650            ods escapechar='^';
+651            %if &_listing=1 %then %do;
+652                ods listing close;
+653            %end;
+654            ods noresults;
+655        
+656            /*First tab has library summary and variables in multiple datasets summary*/
+657            ods excel file="&out_file" options(sheet_name="Library %qupcase(&libname_text) -
+657      ! Summary" sheet_interval='none' flow='tables');
+658            proc report data=_libn_summary_ nowd
+659                style(header)={background=white just=c fontfamily='Times New Roman' fontsize=9pt}
+660                style(column)={background=white just=left vjust=top fontfamily='Times New Roman'
+660      ! fontsize=9pt};
+661                columns ("Summary of Datasets within Library - %qupcase(&libname_text)" dsn obs
+661      ! unique_index variables);
+662        
+663                define dsn / display width=50;
+664                define unique_index / display width=50 center;
+665                define obs / display width=50 center;
+666                define variables / display width=50 center;
+667        
+668                compute variables;
+669                    shade+1;
+670                    if mod(shade,2)=0 then call
+670      ! define(_row_,'style/merge','style={background=greyef}');
+671                    if substr('Dataset - '||strip(dsn),1,28)=substr('Dataset -
+671      ! '||strip(tempname),1,28) then do;
+672                       if tempnamen=. then tempnamen=2;
+673                       else tempnamen+1;
+674                       urlstring="#'"||substr('Dataset - '||strip(dsn),1,28)||'
+674      ! '||strip(put(tempnamen,12.0))||"'!A3";
+675                    end;
+676                    else do;
+677                       urlstring="#'"||substr('Dataset - '||strip(dsn),1,28)||"'!A3";
+678                       tempnamen=.;
+679                    end;
+680                    if ^missing(dsn) then call define('dsn','url',urlstring);
+681                endcomp;
+682            run;
+15                                          The SAS System                16:55 Friday, March 20, 2026
+
+683        
+684            proc report data=_var_summary_ nowd
+685                style(header)={background=white just=c fontfamily='Times New Roman' fontsize=9pt}
+686                style(column)={background=white just=left vjust=top fontfamily='Times New Roman'
+686      ! fontsize=9pt};
+687                columns ("Variables that Exist Across Multiple Datasets" var_name dsn_list labels);
+688        
+689                define dsn_list / display width=50;
+690                define var_name / display width=50;
+691                define labels / display width=50;
+692        
+693                compute labels;
+694                    shade+1;
+695                    if mod(shade,2)=0 then call
+695      ! define(_row_,'style/merge','style={background=greyef}');
+696                endcomp;
+697            run;
+698        
+699            %local topref;
+700            %let topref=%str(=HYPERLINK("#'Library %qupcase(&libname_text) - Summary'!A4","Click to
+700      !  Return to Top Summary"));
+701        
+702            /*Print one tab for each dataset: either long or wide form*/
+703            %do i = 1 %to %sysfunc(countw(&datalist,%str( )));
+704                %if %sysevalf(%qupcase(&format)=LONG, boolean) %then %do;
+705                    ods excel options(sheet_name="Dataset - %scan(&datalist,&i,%str( ))"
+705      ! sheet_interval='table' frozen_headers='2');
+706                    proc report data=_data_specs_ nowd
+707                        style(header)={background=white just=c fontfamily='Times New Roman'
+707      ! fontsize=9pt}
+708                        style(column)={background=white just=left vjust=top fontfamily='Times New
+708      ! Roman' fontsize=9pt};
+709                        columns ("Dataset Name: %scan(&datalist,&i,%str( ))" ("%superq(topref)"
+709      ! var_name spec value));
+710        
+711                        define var_name / order order=data width=50 noprint;
+712                        define spec / display width=50;
+713                        define value / display width=50;
+714        
+715                        compute value;
+716                            if ^missing(var_name) then do;
+717                                shade+1;
+718                                call define(_row_,'style/merge','style={bordertopwidth=0.5pt
+718      ! bordertopcolor=black bordertopstyle=solid}');
+719                            end;
+720                            if mod(shade,2)=0 then call
+720      ! define(_row_,'style/merge','style={background=greyef}');
+721                        endcomp;
+722                        where data_id=&i;
+723                    run;
+724                %end;
+725                %else %if %sysevalf(%qupcase(&format)=CONDENSED, boolean) %then %do;
+726                    ods excel options(sheet_name="Dataset - %scan(&datalist,&i,%str( ))"
+726      ! sheet_interval='table' frozen_headers='2');
+16                                          The SAS System                16:55 Friday, March 20, 2026
+
+727                    proc report data=_data_specs_condensed nowd
+728                        style(header)={background=white just=c fontfamily='Times New Roman'
+728      ! fontsize=9pt}
+729                        style(column)={background=white just=left vjust=top fontfamily='Times New
+729      ! Roman' fontsize=9pt};
+730                        columns ("Dataset Name: %scan(&datalist,&i,%str( ))"  ("%superq(topref)"
+730      ! var_name label format values));
+731        
+732                        define var_name / order order=data width=50 'Variable';
+733                        define label / display width=50;
+734                        define format / display width=50;
+735                        define values / display width=50;
+736        
+737                        compute values;
+738                            shade+1;
+739                            call define(_row_,'style/merge','style={bordertopwidth=0.5pt
+739      ! bordertopcolor=black bordertopstyle=solid}');
+740                            if mod(shade,2)=0 then call
+740      ! define(_row_,'style/merge','style={background=greyef}');
+741                        endcomp;
+742                        where data_id=&i;
+743                    run;
+744                %end;
+745                %else %if %sysevalf(%qupcase(&format)=WIDE, boolean) %then %do;
+746                    ods excel options(sheet_name="Dataset - %scan(&datalist,&i,%str( ))"
+746      ! sheet_interval='table' frozen_headers='1' frozen_rowheaders='1');
+747                    proc report data=_data_specs_wide nowd
+748                        style(header)={background=white just=c fontfamily='Times New Roman'
+748      ! fontsize=9pt}
+749                        style(column)={background=white just=left vjust=top fontfamily='Times New
+749      ! Roman' fontsize=9pt};
+750                        columns ("Dataset Name: %scan(&datalist,&i,%str( ))"  ("%superq(topref)"
+750      ! spec
+751                        %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+752                            value&j
+753                        %end;));
+754        
+755                        define spec / display width=50 ' ';
+756                        %do j = 1 %to %sysfunc(countw(&&varlist&i,%str( )));
+757                            define value&j / display width=50 ' ' style={cellwidth=2in};
+758                        %end;
+759        
+760                        compute spec;
+761                            shade+1;
+762                            if mod(shade,2)=0 then call
+762      ! define(_row_,'style/merge','style={background=greyef}');
+763                        endcomp;
+764                        where data_id=&i;
+765                    run;
+766                %end;
+767            %end;
+768        
+769            ods excel close;
+770            ods results;
+17                                          The SAS System                16:55 Friday, March 20, 2026
+
+771        
+772            %if &_listing=1 %then %do;
+773                ods listing;
+774            %end;
+775        
+776            /**Delete temporary datasets**/
+777            proc datasets nolist nodetails;
+778                %if &debug=0 %then %do;
+779                    delete _data_specs_ _data_specs_condensed _data_specs_wide _libn_summary_
+779      ! _specs_ _var_summary_
+780                        %do i = 1 %to %sysfunc(countw(&datalist,%str( ))); _data_specs_wide&i %end;
+780      ! ;
+781                %end;
+782            quit;
+783        
+784            libname inlib clear;
+785        
+786            %put NOTE: Data specifications document created: &out_file;
+787        
+788            %errhandl:
+789            /**Reload previous Options**/
+790            options mergenoby=&_mergenoby &_notes &_quotelenmax;
+791            %put DATA_SPECS_CLI has finished processing, runtime:
+791      ! %sysfunc(putn(%sysevalf(%sysfunc(TIME())-&_starttime.),mmss.));
+792        %mend;
+793        
+794        %data_specs_cli;
+DEBUG: Raw SYSPARM value = 
+C:\Users\rooneyz\Documents\TestData\HarmTestData|E:\output|index=|cat_threshold=10|format=long|order=v
+arnum|where=|debug=0
+DEBUG: Pipe position = 49
+WARNING: Argument 2 to macro function %SUBSTR is out of range.
+WARNING: Argument 2 to macro function %SUBSTR is out of range.
+DEBUG: Parsed extra params: index= cat_threshold=10 format=long order=varnum debug=0
+DEBUG: Input Directory = C:\Users\rooneyz\Documents\TestData\HarmTestData
+DEBUG: Output Directory = E:\output
+DEBUG: Input directory exists = 1
+DEBUG: Output directory exists = 1
+DEBUG: Directory E:\output\DAC_Documents already exists
+WARNING: In a call to the COMPRESS function or routine, the modifier "'" not valid.
+WARNING: In a call to the COMPRESS function or routine, the modifier "'" not valid.
+DEBUG: Output file = E:\output\DAC_Documents\data_specs_HarmTestData_20260320.xlsx
+Progress: AE: 1 of 49
+Progress: CE: 2 of 49
+Progress: CM: 3 of 49
+Progress: CO: 4 of 49
+Progress: DA: 5 of 49
+Progress: DM: 6 of 49
+Progress: DS: 7 of 49
+Progress: DV: 8 of 49
+Progress: EC: 9 of 49
+Progress: EG: 10 of 49
+Progress: EX: 11 of 49
+Progress: FA: 12 of 49
+18                                          The SAS System                16:55 Friday, March 20, 2026
+
+Progress: HO: 13 of 49
+Progress: IE: 14 of 49
+Progress: LB: 15 of 49
+Progress: MH: 16 of 49
+Progress: MI: 17 of 49
+Progress: ML: 18 of 49
+Progress: MO: 19 of 49
+Progress: PC: 20 of 49
+Progress: PE: 21 of 49
+Progress: PR: 22 of 49
+Progress: QS: 23 of 49
+Progress: RP: 24 of 49
+Progress: SC: 25 of 49
+Progress: SE: 26 of 49
+Progress: SU: 27 of 49
+Progress: SUPPAE: 28 of 49
+Progress: SUPPCM: 29 of 49
+Progress: SUPPDM: 30 of 49
+Progress: SUPPDS: 31 of 49
+Progress: SUPPDV: 32 of 49
+Progress: SUPPEG: 33 of 49
+Progress: SUPPEX: 34 of 49
+Progress: SUPPFA: 35 of 49
+Progress: SUPPLB: 36 of 49
+Progress: SUPPMI: 37 of 49
+Progress: SUPPMO: 38 of 49
+Progress: SUPPPE: 39 of 49
+Progress: SUPPPR: 40 of 49
+Progress: SUPPQS: 41 of 49
+Progress: SV: 42 of 49
+Progress: TA: 43 of 49
+Progress: TE: 44 of 49
+Progress: TI: 45 of 49
+Progress: TS: 46 of 49
+Progress: TV: 47 of 49
+Progress: VE: 48 of 49
+Progress: VS: 49 of 49
+DATA_SPECS_CLI has finished processing, runtime:  0:18
+NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
+NOTE: The SAS System used:
+      real time           18.54 seconds
+      cpu time            15.78 seconds
+      
