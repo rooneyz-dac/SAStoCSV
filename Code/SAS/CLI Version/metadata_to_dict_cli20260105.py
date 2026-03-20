@@ -15,8 +15,8 @@ Positional arguments:
 
 Behavior:
     - Reads every sheet in the workbook using header row 3 (zero-based index 2).
-    - Normalizes column names to uppercase and strips whitespace.
-    - Renames columns (case-insensitive mapping):
+    - Normalizes column names to uppercase, replaces any whitespace runs (including newlines) with a single space, and strips.
+    - Renames columns (case-insensitive/multi-line aware mapping):
         'VARIABLE NUMBER' -> 'NUM'
         'VARIABLE NAME'   -> 'VARIABLE'
         'LENGTH'          -> 'LEN'
@@ -39,24 +39,31 @@ Requirements:
 Notes:
     - Intended for CLI use on Windows; paths may be absolute or relative.
     - Header row and mapping are configurable in code if format changes.
+    - Column names in the mapping keys may contain spaces, carriage returns, or newlines; they are normalized before comparison.
 
 ChangeLog:
     2026-01-05  Header updated to document behavior and column normalization.
+    2026-01-06  Added normalize_col function to handle carriage returns and extra whitespace in column name mappings.
 """
-
 
 import pandas as pd
 import os
 import sys
+import re
+
+
+def normalize_col(s: object) -> str:
+    """Normalize a column name: uppercase, collapse any whitespace to single space, strip."""
+    return re.sub(r'\s+', ' ', str(s)).upper().strip()
 
 
 def main():
     # Step 1: Parse command-line arguments
     if len(sys.argv) != 4:
         print("Error: Invalid number of arguments")
-        print("Usage: python metadata_to_dict_cli20251122.py <input_file> <output_dir> <trial_name>")
+        print("Usage: python metadata_to_dict_cli20260105.py <input_file> <output_dir> <trial_name>")
         print(
-            "Example: python metadata_to_dict_cli20251122.py 'C:\\data\\meta_data_summary.xlsx' 'C:\\data\\output' 'FLINT2'")
+            "Example: python metadata_to_dict_cli20260105.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output` FLINT2")
         sys.exit(1)
 
     file_path = sys.argv[1]
@@ -101,7 +108,7 @@ def main():
     # Step 6: Initialize an empty DataFrame for the combined result
     combined_df = pd.DataFrame()
 
-    # Column rename mapping (keys expected uppercase/stripped)
+    # Column rename mapping (keys may include spaces/carriage returns; will be normalized)
     col_rename_map = {
         'VARIABLE NUMBER': 'NUM',
         'VARIABLE NAME': 'VARIABLE',
@@ -109,19 +116,30 @@ def main():
         'VARIABLE LABEL': 'LABEL'
     }
 
+    # Normalize the keys of the rename map so entries with extra spaces/carriage returns match
+    normalized_col_rename_map = {normalize_col(k): v for k, v in col_rename_map.items()}
+
     # Step 7: Loop through all sheets
-    for sheet in excel_data.sheet_names[0:]:
+    for sheet in excel_data.sheet_names:
         print(f"DEBUG: Processing sheet: {sheet}")
         try:
             # Load the sheet data, specifying that the header is in row 3 (index 2)
             df = pd.read_excel(file_path, sheet_name=sheet, header=2)
 
-            # Normalize column names to uppercase and strip whitespace for consistent comparison
-            df.columns = df.columns.str.upper().str.strip()
+            # Normalize column names:
+            # - Uppercase
+            # - Replace any whitespace runs (including newlines/tabs/multiple spaces) with a single space
+            # - Strip leading/trailing spaces
+            df.columns = (
+                df.columns
+                .astype(str)
+                .str.upper()
+                .str.replace(r'\s+', ' ', regex=True)
+                .str.strip()
+            )
 
-            # Rename specific columns if they exist
-            # Create a mapping that only includes existing columns
-            existing_renames = {k: v for k, v in col_rename_map.items() if k in df.columns}
+            # Rename specific columns if they exist (use normalized rename map)
+            existing_renames = {k: v for k, v in normalized_col_rename_map.items() if k in df.columns}
             if existing_renames:
                 df.rename(columns=existing_renames, inplace=True)
                 print(f"DEBUG: Renamed columns {existing_renames} in sheet: {sheet}")

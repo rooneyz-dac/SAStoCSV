@@ -14,27 +14,30 @@
 #   - Builds trial dictionary from variable metadata
 #
 # Usage:
-#   ./dataPreprocessing.sh <input_directory> <output_directory> [trial_name]
+#   ./dataPreprocessing.sh <input_folder_path>
 #
 # Arguments:
-#   input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt)
-#   output_directory - Path where outputs and documentation will be saved
-#   trial_name       - (Optional) Name for trial dictionary; defaults to YYYYMMDD
+#   input_folder_path - Full path to folder containing SAS datasets (.sas7bdat or .xpt)
+#                       The script will parse this path to extract folder hierarchy and
+#                       create output directories automatically
 #
 # Examples:
-#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output" FLINT2
-#   ./dataPreprocessing.sh "/path/to/sas/data" "/path/to/output"
+#   ./dataPreprocessing.sh "C:/data/clinical/study01/raw_data"
+#   ./dataPreprocessing.sh "/path/to/sas/data"
 #
 # Output Structure:
-#   output_directory/
+#   For input: /path/to/GREATGRANDPARENT/GRANDPARENT/PARENT/FILENAME/
+#
+#   PARENT_FILENAME.output/
 #   ├── DAC_XPT/              - XPT format datasets
 #   ├── DAC_SDTM/             - Converted SAS datasets (if XPT input detected)
 #   ├── DAC_CSV/              - CSV exports
-#   ├── DAC_Documents/        - All documentation files
-#   │   ├── variable_info_*.xlsx
-#   │   ├── data_specs_*.xlsx
-#   │   ├── library_info_*.xlsx
-#   │   └── *_dictionary.xlsx
+#   ├── DAC_Documents/        - All documentation files with format:
+#   │   │                       GREATGRANDPARENT_GRANDPARENT_PARENT_FILENAME_*.xlsx
+#   │   ├── variable_info_GREATGRANDPARENT_GRANDPARENT_PARENT_FILENAME_*.xlsx
+#   │   ├── data_specs_GREATGRANDPARENT_GRANDPARENT_PARENT_FILENAME_*.xlsx
+#   │   ├── library_info_GREATGRANDPARENT_GRANDPARENT_PARENT_FILENAME_*.xlsx
+#   │   └── GREATGRANDPARENT_GRANDPARENT_PARENT_FILENAME_dictionary.xlsx
 #   ├── *.log                 - SAS execution logs
 #   └── pipeline_vars.env     - Environment variables for chaining scripts
 #
@@ -73,23 +76,76 @@ set -e  # Exit on error
 ################################################################################
 
 # Check if correct number of arguments provided
-if [ $# -ne 3 ]; then
+if [ $# -ne 1 ]; then
     echo "Error: Invalid number of arguments"
-    echo "Usage: ./dataPreprocessing.sh <input_dir> <output_dir> <trial_name>"
-    echo "Example: ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output' 'FLINT2'"
+    echo "Usage: ./dataPreprocessing.sh <input_folder_path>"
+    echo "Example: ./dataPreprocessing.sh 'C:/data/clinical/study01/raw_data'"
     exit 1
 fi
 
 # Parse command line arguments
 INPUT_DIR="$1"
-OUTPUT_DIR="$2"
-TRIAL_NAME="$3"
 
 # Validate input directory exists
 if [ ! -d "$INPUT_DIR" ]; then
     echo "Error: Input directory does not exist: $INPUT_DIR"
     exit 1
 fi
+
+# Parse the input path to extract folder hierarchy
+# Convert path separators for consistency
+NORMALIZED_PATH=$(echo "$INPUT_DIR" | sed 's/\\/\//g')
+
+# Extract folder components from path
+# Split by forward slash and get the last 4 components
+IFS='/' read -ra PATH_COMPONENTS <<< "$NORMALIZED_PATH"
+
+# Get the total number of components
+NUM_COMPONENTS=${#PATH_COMPONENTS[@]}
+
+# Extract the required folder levels
+if [ $NUM_COMPONENTS -ge 4 ]; then
+    GREATGRANDPARENT="${PATH_COMPONENTS[$((NUM_COMPONENTS - 4))]}"
+    GRANDPARENT="${PATH_COMPONENTS[$((NUM_COMPONENTS - 3))]}"
+    PARENT="${PATH_COMPONENTS[$((NUM_COMPONENTS - 2))]}"
+    FILENAME="${PATH_COMPONENTS[$((NUM_COMPONENTS - 1))]}"
+else
+    # If fewer than 4 levels, use what's available
+    case $NUM_COMPONENTS in
+        1)
+            GREATGRANDPARENT=""
+            GRANDPARENT=""
+            PARENT=""
+            FILENAME="${PATH_COMPONENTS[0]}"
+            ;;
+        2)
+            GREATGRANDPARENT=""
+            GRANDPARENT=""
+            PARENT="${PATH_COMPONENTS[0]}"
+            FILENAME="${PATH_COMPONENTS[1]}"
+            ;;
+        3)
+            GREATGRANDPARENT=""
+            GRANDPARENT="${PATH_COMPONENTS[0]}"
+            PARENT="${PATH_COMPONENTS[1]}"
+            FILENAME="${PATH_COMPONENTS[2]}"
+            ;;
+    esac
+fi
+
+# Build the document name prefix
+if [ -z "$GREATGRANDPARENT" ]; then
+    DOC_PREFIX="${PARENT}_${FILENAME}"
+else
+    DOC_PREFIX="${GREATGRANDPARENT}_${GRANDPARENT}_${PARENT}_${FILENAME}"
+fi
+
+# Create output directory same level as input directory's parent
+PARENT_DIR="$(dirname "$INPUT_DIR")"
+OUTPUT_DIR="${PARENT_DIR}/${FILENAME}.output"
+
+# Generate trial name from current date and filename
+TRIAL_NAME="${FILENAME}_$(date +%Y%m%d)"
 
 # Create output directory if it doesn't exist
 if [ ! -d "$OUTPUT_DIR" ]; then
@@ -118,6 +174,7 @@ echo "Data Preprocessing Pipeline"
 echo "=========================================="
 echo "Input Directory:  $INPUT_DIR"
 echo "Output Directory: $OUTPUT_DIR"
+echo "Document Prefix:  $DOC_PREFIX"
 echo "Trial Name:       $TRIAL_NAME"
 echo "Script Directory: $SCRIPT_DIR"
 echo "=========================================="
@@ -155,9 +212,8 @@ echo "[5/6] Generating library information document..."
 echo "      Complete. Log: $OUTPUT_DIR/library_info.log"
 
 # Extract variable info file path from log
-LIBNAME=$(basename "$INPUT_DIR" | tr -cd '[:alnum:]')
 DATE_STAMP=$(date +%Y%m%d)
-export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${LIBNAME}_${DATE_STAMP}.xlsx"
+export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${DOC_PREFIX}_${DATE_STAMP}.xlsx"
 
 # Verify file was created
 if [ -f "$VARIABLE_INFO_FILE" ]; then
