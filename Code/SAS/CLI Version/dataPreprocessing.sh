@@ -74,14 +74,6 @@
 
 set -e  # Exit on error
 
-#!/bin/bash
-
-################################################################################
-# Data Preprocessing Pipeline Script
-# Purpose: Automates SAS data conversion and documentation generation
-# Usage: ./dataPreprocessing.sh <input_dir> [output_dir] [OPTIONS]
-################################################################################
-
 # Display usage information
 usage() {
     echo "Usage: ./dataPreprocessing.sh <input_dir> [output_dir] [OPTIONS]"

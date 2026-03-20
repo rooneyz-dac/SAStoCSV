@@ -1,8 +1,60 @@
-/* ---------------------------------------------------------
-   SAStoCSVcli1120v7.sas
-   Usage (Windows CMD):
-   sas -sysin C:\path\to\SAStoCSVcli1120v7.sas -SYSPARM "C:\path\to\sas\data|C:\path\to\output"
---------------------------------------------------------- */
+/*------------------------------------------------------------------*
+| PROGRAM NAME : SAStoCSVcli2InputsWORKING20251121.sas
+| SHORT DESC   : Batch converts all SAS datasets in a directory to
+|                CSV format via command-line interface
+*------------------------------------------------------------------*
+| CREATED BY   : Modified for CLI usage
+| DATE CREATED : 2025-11-21
+*------------------------------------------------------------------*
+| VERSION UPDATES:
+| 2025-11-21: Initial CLI release
+|   - Added SYSPARM parsing for input and output directories
+|   - Added automatic creation of DAC_CSV output subfolder
+|   - Added error log generation
+*------------------------------------------------------------------*
+| PURPOSE
+| Exports all SAS datasets (.sas7bdat) found in a specified input
+| directory to CSV format. Output CSV files are placed in a
+| DAC_CSV subfolder within the specified output directory. An error
+| log file (error_log.txt) is written to the output directory upon
+| completion summarizing any SAS errors encountered.
+|
+| 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+| INPUT_DIRECTORY  = Path to the folder containing .sas7bdat files
+|                    to be converted
+| OUTPUT_DIRECTORY = Path to the folder where the DAC_CSV subfolder
+|                    and error log will be created
+|
+| 2.0: OPTIONAL PARAMETERS
+| None. All parameters are supplied via SYSPARM.
+|
+| USAGE:
+|   sas -sysparm "input_directory|output_directory"
+|       -sysin SAStoCSVcli2InputsWORKING20251121.sas
+|
+| OUTPUT STRUCTURE:
+|   output_directory\
+|   ├── DAC_CSV\          - CSV exports of all SAS datasets
+|   └── error_log.txt     - Error summary from the SAS run
+*------------------------------------------------------------------*
+| OPERATING SYSTEM COMPATIBILITY
+| SAS v9.4 or Higher: Yes
+*------------------------------------------------------------------*
+| MACRO CALL
+|
+| Not applicable. Script is invoked directly via the SAS command
+| line using -sysin and -sysparm.
+*------------------------------------------------------------------*
+| EXAMPLES
+|
+| Basic usage:
+|   sas -sysparm "C:\data\input|C:\data\output"
+|       -sysin SAStoCSVcli2InputsWORKING20251121.sas
+|
+| Using a study-specific output folder:
+|   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
+|       -sysin SAStoCSVcli2InputsWORKING20251121.sas
+*------------------------------------------------------------------*/
 
 /* 1) Parse SYSPARM to get input and output directories */
 %let params = %sysfunc(dequote(&SYSPARM));

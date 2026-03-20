@@ -1,31 +1,76 @@
-/********************************************************************************
-* Program Name: SAStoXPTcli20251121v3.sas
-*
-* Purpose:
-*   Bidirectional conversion utility for SAS datasets between SAS7BDAT and XPT
-*   (SAS Transport) formats. Designed for command-line execution.
-*
-* Description:
-*   This script performs batch conversion of SAS datasets:
-*   - Converts .sas7bdat files to .xpt format in OUTDIR\DAC_XPT
-*   - Converts .xpt files to .sas7bdat format in OUTDIR\DAC_SDTM
-*   - Creates output directories only when needed
-*   - Logs all conversion activities and errors
-*   - Truncates dataset names to 8 characters (first 4 + last 4) for XPT format compliance
-*
-* Usage:
-*   sas -sysparm "input_folder|output_folder" -sysin SAStoXPTcli20251121v3.sas
-*
-* XPT Format Limitations:
-*   - Member names limited to 8 characters
-*   - Dataset names automatically truncated to first 4 + last 4 characters
-*   - Example: "berkeley_pbo_ae" becomes "berko_ae"
-*
-* Author: [Your Name]
-* Date Created: 2025-11-21
-* Version: 3.2
-*
-********************************************************************************/
+/*------------------------------------------------------------------*
+| PROGRAM NAME : SAStoXPTcli20251121v2.sas
+| SHORT DESC   : Bidirectional batch conversion between SAS7BDAT
+|                and XPT (SAS Transport) formats via CLI
+*------------------------------------------------------------------*
+| CREATED BY   : Modified for CLI usage
+| DATE CREATED : 2025-11-21
+| VERSION      : 2.0
+*------------------------------------------------------------------*
+| VERSION UPDATES:
+| 2025-11-21: Initial CLI release
+|   - Added SYSPARM parsing for input and output directories
+|   - Added bidirectional conversion (SAS7BDAT <-> XPT)
+|   - Added automatic creation of DAC_XPT and DAC_SDTM subfolders
+|   - Added conversion error log generation
+*------------------------------------------------------------------*
+| PURPOSE
+| Performs batch bidirectional conversion of SAS datasets between
+| SAS7BDAT and XPT (SAS Transport) formats. When .sas7bdat files
+| are detected in the input directory they are converted to .xpt
+| and placed in OUTDIR\DAC_XPT. When .xpt files are detected they
+| are converted to .sas7bdat and placed in OUTDIR\DAC_SDTM. Both
+| conversion types may occur in a single run. An error log
+| (xpt_error_log.txt) is written to the output directory.
+|
+| 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+| INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
+|                    files to be converted
+| OUTPUT_DIRECTORY = Path to folder where output subfolders and
+|                    the error log will be created. Must exist
+|                    prior to execution.
+|
+| 2.0: XPT FORMAT LIMITATIONS
+| MEMBER NAMES     = Limited to 8 characters by the XPT format
+|                    specification. Dataset names longer than 8
+|                    characters are automatically truncated to the
+|                    first 4 characters concatenated with the last
+|                    4 characters.
+|                    Example: "berkeley_pbo_ae" becomes "berkl_ae"
+|
+| USAGE:
+|   sas -sysparm "input_directory|output_directory"
+|       -sysin SAStoXPTcli20251121v2.sas
+|
+| OUTPUT STRUCTURE:
+|   output_directory\
+|   ├── DAC_XPT\          - XPT exports (from .sas7bdat input)
+|   ├── DAC_SDTM\         - SAS7BDAT exports (from .xpt input)
+|   └── xpt_error_log.txt - Conversion activity and error log
+*------------------------------------------------------------------*
+| OPERATING SYSTEM COMPATIBILITY
+| SAS v9.4 or Higher: Yes
+| Windows:            Yes (uses DIR command for file listing)
+*------------------------------------------------------------------*
+| MACRO CALL
+|
+| Not applicable. Script is invoked directly via the SAS command
+| line using -sysin and -sysparm.
+*------------------------------------------------------------------*
+| EXAMPLES
+|
+| Convert SAS datasets to XPT format:
+|   sas -sysparm "C:\data\input|C:\data\output"
+|       -sysin SAStoXPTcli20251121v2.sas
+|
+| Convert XPT files back to SAS7BDAT:
+|   sas -sysparm "C:\data\xpt_files|C:\data\output"
+|       -sysin SAStoXPTcli20251121v2.sas
+|
+| Process a mixed directory (both .sas7bdat and .xpt present):
+|   sas -sysparm "C:\data\mixed|C:\data\output"
+|       -sysin SAStoXPTcli20251121v2.sas
+*------------------------------------------------------------------*/
 
 %macro convert_files;
     %let sysparm_value = &sysparm;

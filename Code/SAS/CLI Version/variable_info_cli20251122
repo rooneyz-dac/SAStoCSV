@@ -1,21 +1,64 @@
 /*------------------------------------------------------------------*
-| PROGRAM NAME  : variable_info_cli.sas
-| SHORT DESC    : Creates a variable information document with CLI
-|                 parameter support
+| PROGRAM NAME : variable_info_cli.sas
+| SHORT DESC   : Creates a variable information document with CLI
+|                parameter support
 *------------------------------------------------------------------*
-| CREATED BY    : Modified for CLI usage
-| DATE CREATED  : 2025-01-22
+| CREATED BY   : Modified for CLI usage
+| DATE CREATED : 2025-01-22
+*------------------------------------------------------------------*
+| VERSION UPDATES:
+| 2025-01-22: Initial CLI release
+|   - Added SYSPARM parsing for input and output directories
+|   - Added automatic creation of DAC_Documents output subfolder
+|   - Added path validation for input and output directories
+|   - Output file name includes library name and date stamp
+|   - Each dataset is placed on its own sheet in the Excel workbook
 *------------------------------------------------------------------*
 | PURPOSE
-| Create a variable information table for a designated library with
-| CLI parameter support for automated workflows.
+| Creates a variable-level information report for all datasets in a
+| designated directory. For each dataset the report lists variable
+| number, name, type, length, format, informat, and label. Results
+| are exported to a multi-sheet Excel workbook (.xlsx) in the
+| DAC_Documents subfolder of the output directory, with one sheet
+| per dataset.
+|
+| 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+| INPUT_DIRECTORY  = Path to the folder containing SAS datasets
+|                    (.sas7bdat) to be summarized
+| OUTPUT_DIRECTORY = Path to the folder where the DAC_Documents
+|                    subfolder and output file will be created.
+|                    Must exist prior to execution.
+|
+| 2.0: OPTIONAL PARAMETERS
+| None. All parameters are supplied via SYSPARM.
 |
 | USAGE:
-|   sas -sysparm "input_folder|output_folder" -sysin variable_info_cli.sas
+|   sas -sysparm "input_directory|output_directory"
+|       -sysin variable_info_cli.sas
 |
-| EXAMPLES:
-|   sas -sysparm "C:\data\input|C:\data\output" -sysin variable_info_cli.sas
+| OUTPUT STRUCTURE:
+|   output_directory\
+|   └── DAC_Documents\
+|       └── variable_info_<libname>_<YYYYMMDD>.xlsx
+|           (one Excel sheet per dataset)
+*------------------------------------------------------------------*
+| OPERATING SYSTEM COMPATIBILITY
+| SAS v9.4 or Higher: Yes
+*------------------------------------------------------------------*
+| MACRO CALL
 |
+| Not applicable. Script is invoked directly via the SAS command
+| line using -sysin and -sysparm.
+*------------------------------------------------------------------*
+| EXAMPLES
+|
+| Basic usage:
+|   sas -sysparm "C:\data\input|C:\data\output"
+|       -sysin variable_info_cli.sas
+|
+| Using a study-specific directory:
+|   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
+|       -sysin variable_info_cli.sas
 *------------------------------------------------------------------*/
 
 %macro variable_info_cli;
