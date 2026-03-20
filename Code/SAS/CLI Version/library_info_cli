@@ -1,21 +1,61 @@
 /*------------------------------------------------------------------*
-| PROGRAM NAME  : library_info_cli.sas
-| SHORT DESC    : Creates a library information document with CLI
-|                 parameter support
+| PROGRAM NAME : library_info_cli.sas
+| SHORT DESC   : Creates a library information document with CLI
+|                parameter support
 *------------------------------------------------------------------*
-| CREATED BY    : Modified for CLI usage
-| DATE CREATED  : 2025-01-21
+| CREATED BY   : Modified for CLI usage
+| DATE CREATED : 2025-01-21
+*------------------------------------------------------------------*
+| VERSION UPDATES:
+| 2025-01-21: Initial CLI release
+|   - Added SYSPARM parsing for input and output directories
+|   - Added automatic creation of DAC_Documents output subfolder
+|   - Added path validation for input and output directories
+|   - Output file name includes library name and date stamp
 *------------------------------------------------------------------*
 | PURPOSE
-| Create a library information table for a designated library with
-| CLI parameter support for automated workflows.
+| Creates a library information summary for all datasets found in a
+| designated directory. The output lists each dataset's name, label,
+| observation count, variable count, creation date, and last
+| modification date. Results are exported to an Excel workbook
+| (.xlsx) in the DAC_Documents subfolder of the output directory.
+|
+| 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+| INPUT_DIRECTORY  = Path to the folder containing SAS datasets
+|                    (.sas7bdat) to be summarized
+| OUTPUT_DIRECTORY = Path to the folder where the DAC_Documents
+|                    subfolder and output file will be created.
+|                    Must exist prior to execution.
+|
+| 2.0: OPTIONAL PARAMETERS
+| None. All parameters are supplied via SYSPARM.
 |
 | USAGE:
-|   sas -sysparm "input_folder|output_folder" -sysin library_info_cli.sas
+|   sas -sysparm "input_directory|output_directory"
+|       -sysin library_info_cli.sas
 |
-| EXAMPLES:
-|   sas -sysparm "C:\data\input|C:\data\output" -sysin library_info_cli.sas
+| OUTPUT STRUCTURE:
+|   output_directory\
+|   └── DAC_Documents\
+|       └── library_info_<libname>_<YYYYMMDD>.xlsx
+*------------------------------------------------------------------*
+| OPERATING SYSTEM COMPATIBILITY
+| SAS v9.4 or Higher: Yes
+*------------------------------------------------------------------*
+| MACRO CALL
 |
+| Not applicable. Script is invoked directly via the SAS command
+| line using -sysin and -sysparm.
+*------------------------------------------------------------------*
+| EXAMPLES
+|
+| Basic usage:
+|   sas -sysparm "C:\data\input|C:\data\output"
+|       -sysin library_info_cli.sas
+|
+| Using a study-specific directory:
+|   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
+|       -sysin library_info_cli.sas
 *------------------------------------------------------------------*/
 
 %macro library_info_cli;

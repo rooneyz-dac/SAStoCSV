@@ -4,34 +4,121 @@
 |               datasets with CLI parameter support
 *------------------------------------------------------------------*
 | CREATED BY  : Modified for CLI usage
+| ORIGINAL    : Meyers, Jeffrey (07/28/2016)
 *------------------------------------------------------------------*
 | VERSION UPDATES:
+| 2026-03-20: Extended SYSPARM to support optional macro parameters
+|   - Optional params passed as key=value pairs after output dir
 | 2025-01-21: Modified to accept CLI parameters via SYSPARM
 |   - Added input/output path parsing from SYSPARM
 |   - Added automatic creation of DAC_Documents folder
 |   - Added path validation
-| 2026-03-20: Extended SYSPARM to support optional macro parameters
-|   - Optional params passed as key=value pairs after output dir
+| See original data_specs macro for prior version history.
 *------------------------------------------------------------------*
 | PURPOSE
-| Create a data specifications sheet for a designated library with
-| CLI parameter support for automated workflows.
+| Create a data specifications sheet for all datasets in a
+| designated directory with CLI parameter support for automated
+| workflows. Allows for a quick look at the data within a library
+| or allows for a simple data dictionary to be built.
+| The macro outputs a report with three types of tables. The first
+| is a listing of the datasets included in the library along with
+| the number of rows, number of unique indexes, and number of
+| variables. The second table shows the number of variables that
+| exist across multiple datasets along with any different labels
+| given to them. The last type of table is built for each dataset
+| on a separate tab listing the variables and specs (label, format,
+| and values) for each.
+|
+| 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+| INPUT_DIRECTORY  = Path to the folder containing SAS datasets
+|                    (.sas7bdat) to be summarized
+| OUTPUT_DIRECTORY = Path to the folder where the DAC_Documents
+|                    subfolder and output file will be created.
+|                    Must exist prior to execution.
+|
+| 2.0: OPTIONAL SYSPARM PARAMETERS (pipe-delimited key=value pairs)
+| INDEX         = Allows the designation of multiple index variables
+|                 to determine number of patients or other interest
+|                 within a dataset.
+| CAT_THRESHOLD = Determines the number of variable levels that can
+|                 exist before the program will not output the
+|                 frequency and percentage of each level. If a
+|                 numeric variable exceeds this many levels then
+|                 distribution statistics will be used instead.
+|                 Must be greater than or equal to 0. Default: 10.
+| FORMAT        = For the summary of individual datasets this
+|                 determines if the variables will be listed in
+|                 CONDENSED (one row per variable), LONG (one
+|                 column), or WIDE (one row) format. Options are
+|                 LONG, CONDENSED, and WIDE. Default is LONG.
+| ORDER         = Determines how the variables will be ordered in
+|                 the dataset summary tabs. VARNUM will order by
+|                 the variable order in the dataset and NAME will
+|                 order alphabetically. Options are VARNUM and NAME.
+|                 Default is VARNUM.
+| WHERE         = Allows a WHERE clause to be used on the dictionary
+|                 table to subset the datasets included.
+| DEBUG         = Determines if notes are on/off and if temporary
+|                 datasets are cleaned up. Options are 0 (no notes,
+|                 datasets cleaned up) and 1 (notes shown, datasets
+|                 left behind). Default is 0.
 |
 | USAGE:
-|   sas -sysparm "input_folder|output_folder[|key=val|...]" -sysin data_specs_cli.sas
+|   sas -sysparm "input_directory|output_directory[|key=value|...]"
+|       -sysin data_specs_cli.sas
 |
-| OPTIONAL SYSPARM PARAMETERS (pipe-delimited key=value pairs):
-|   index=<vars>            Index variable(s)
-|   cat_threshold=<n>       Category threshold (default: 10)
-|   format=long|condensed|wide  Output format (default: long)
-|   order=varnum|name       Variable order (default: varnum)
-|   where=<condition>       WHERE clause filter
-|   debug=0|1               Debug mode (default: 0)
+| OUTPUT STRUCTURE:
+|   output_directory\
+|   └── DAC_Documents\
+|       └── data_specs_<libname>_<YYYYMMDD>.xlsx
+|           (summary sheet + one sheet per dataset)
+*------------------------------------------------------------------*
+| OPERATING SYSTEM COMPATIBILITY
+| SAS v9.4 or Higher: Yes
+*------------------------------------------------------------------*
+| MACRO CALL
 |
-| EXAMPLES:
-|   sas -sysparm "C:\data\input|C:\data\output" -sysin data_specs_cli.sas
-|   sas -sysparm "C:\data\input|C:\data\output|format=wide|order=name" -sysin data_specs_cli.sas
+| Not applicable. Script is invoked directly via the SAS command
+| line using -sysin and -sysparm. Optional parameters are passed
+| as pipe-delimited key=value pairs within SYSPARM.
 |
+| Equivalent direct macro call (for reference):
+|   %data_specs_cli(
+|       index=,
+|       cat_threshold=10,
+|       where=,
+|       format=long,
+|       order=varnum,
+|       debug=0
+|   );
+*------------------------------------------------------------------*
+| EXAMPLES
+|
+| Basic usage (default options):
+|   sas -sysparm "C:\data\input|C:\data\output"
+|       -sysin data_specs_cli.sas
+|
+| Wide format, alphabetical variable order:
+|   sas -sysparm "C:\data\input|C:\data\output|format=wide|order=name"
+|       -sysin data_specs_cli.sas
+|
+| With index variable and custom category threshold:
+|   sas -sysparm "C:\data\input|C:\data\output|index=USUBJID|cat_threshold=5"
+|       -sysin data_specs_cli.sas
+|
+| Full options example with debug enabled:
+|   sas -sysparm "C:\data\input|C:\data\output|index=USUBJID|format=condensed|order=name|cat_threshold=15|debug=1"
+|       -sysin data_specs_cli.sas
+*------------------------------------------------------------------*
+| This program is free software; you can redistribute it and/or
+| modify it under the terms of the GNU General Public License as
+| published by the Free Software Foundation; either version 2 of
+| the License, or (at your option) any later version.
+|
+| This program is distributed in the hope that it will be useful,
+| but WITHOUT ANY WARRANTY; without even the implied warranty of
+| MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+| General Public License for more details.
 *------------------------------------------------------------------*/
 
 %macro data_specs_cli(
