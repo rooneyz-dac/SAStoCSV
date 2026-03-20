@@ -60,9 +60,9 @@
 #                     retained in the WORK library for inspection.
 #
 #   --log=0|1
-#       0 - Suppress SAS log (.log) files; output is routed to the null
-#           device so no log file is written.
-#       1 (default) - Save SAS log files to the output directory.
+#       0 (default) - Suppress SAS log (.log) files; output is routed to the
+#           null device so no log file is written.
+#       1           - Save SAS log files to the output directory.
 #
 #   --lst=0|1
 #       0 (default) - Suppress SAS listing (.lst) files; output is routed
@@ -75,7 +75,7 @@
 #   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
 #   ./dataPreprocessing20260320.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
 #   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --lst=1
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --log=0
+#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --log=1
 #
 # Output Structure:
 #   output_directory/
@@ -161,8 +161,8 @@ usage() {
     echo "      1           - NOTES shown in the SAS log; temporary datasets retained."
     echo ""
     echo "  --log=0|1"
-    echo "      0 - Suppress SAS log (.log) files (routed to null device)."
-    echo "      1 (default) - Save SAS log files to the output directory."
+    echo "      0 (default) - Suppress SAS log (.log) files (routed to null device)."
+    echo "      1           - Save SAS log files to the output directory."
     echo ""
     echo "  --lst=0|1"
     echo "      0 (default) - Suppress SAS listing (.lst) files."
@@ -173,7 +173,7 @@ usage() {
     echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output'"
     echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
     echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --lst=1"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --log=0"
+    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --log=1"
     exit 1
 }
 
@@ -202,7 +202,7 @@ DS_INDEX=""
 DS_CAT_THRESHOLD="10"
 DS_WHERE=""
 DS_DEBUG="0"
-DS_LOG="1"
+DS_LOG="0"
 DS_LST="0"
 
 # Parse remaining flag arguments
@@ -276,8 +276,8 @@ fi
 SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
 
 # Build the SAS -log and -print arguments based on the --log and --lst toggles.
-# When DS_LOG=1 (default), save .log files to the output directory.
-# When DS_LOG=0, suppress .log output using the null device.
+# When DS_LOG=0 (default), suppress .log output using the null device.
+# When DS_LOG=1, save .log files to the output directory.
 # When DS_LST=1, save .lst files to the output directory.
 # When DS_LST=0 (default), suppress .lst output using the null device.
 
