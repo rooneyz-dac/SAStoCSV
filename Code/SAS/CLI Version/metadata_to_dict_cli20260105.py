@@ -16,13 +16,16 @@ Positional arguments:
 Behavior:
     - Reads every sheet in the workbook using header row 3 (zero-based index 2).
     - Normalizes column names to uppercase, replaces any whitespace runs (including newlines) with a single space, and strips.
-    - Renames columns (case-insensitive/multi-line aware mapping):
-        'VARIABLE NUMBER' -> 'NUM'
-        'VARIABLE NAME'   -> 'VARIABLE'
-        'LENGTH'          -> 'LEN'
-        'VARIABLE LABEL'  -> 'LABEL'
-    - Drops columns named 'FORMAT' and 'INFORMAT' if present.
-    - Adds a 'SOURCE_TAB' column containing the sheet name.
+    - Renames many variant column names (case-insensitive/multi-line aware) to the standard names:
+        NUM      <- 'VARIABLE NUMBER', 'VAR NUM', 'VAR NO', 'NUMBER', 'NO'
+        VARIABLE <- 'VARIABLE NAME', 'VAR NAME', 'NAME'
+        TYPE     <- 'TYPE', 'VAR TYPE', 'DATA TYPE', 'VARIABLE TYPE'
+        LEN      <- 'LENGTH', 'LEN', 'SIZE'
+        POS      <- 'POSITION', 'POS', 'START POSITION', 'COLUMN POSITION', 'START'
+        LABEL    <- 'VARIABLE LABEL', 'VAR LABEL', 'LABEL', 'DESCRIPTION', 'DESC'
+    - Normalizes output to exactly these columns in order: NUM, VARIABLE, TYPE, LEN, POS, LABEL.
+      Any column not in the desired set is dropped; any desired column absent from the source
+      is added with empty (NaN) values.
     - Concatenates all sheets and writes outputs to:
         `DAC_Documents/{TRIAL_NAME}_dictionary.csv`
         `DAC_Documents/{TRIAL_NAME}_dictionary.xlsx`
@@ -44,6 +47,8 @@ Notes:
 ChangeLog:
     2026-01-05  Header updated to document behavior and column normalization.
     2026-01-06  Added normalize_col function to handle carriage returns and extra whitespace in column name mappings.
+    2026-03-20  Expanded column rename map with variant names; added final normalization to enforce
+                output columns NUM, VARIABLE, TYPE, LEN, POS, LABEL in that order.
 """
 
 import pandas as pd
@@ -108,12 +113,36 @@ def main():
     # Step 6: Initialize an empty DataFrame for the combined result
     combined_df = pd.DataFrame()
 
-    # Column rename mapping (keys may include spaces/carriage returns; will be normalized)
+    # Column rename mapping - maps many variant names to the standard output column names.
+    # Keys may include spaces/carriage returns; they are normalized before comparison.
     col_rename_map = {
+        # NUM variants
         'VARIABLE NUMBER': 'NUM',
+        'VAR NUM': 'NUM',
+        'VAR NO': 'NUM',
+        'NUMBER': 'NUM',
+        'NO': 'NUM',
+        # VARIABLE variants
         'VARIABLE NAME': 'VARIABLE',
+        'VAR NAME': 'VARIABLE',
+        'NAME': 'VARIABLE',
+        # TYPE variants
+        'VAR TYPE': 'TYPE',
+        'DATA TYPE': 'TYPE',
+        'VARIABLE TYPE': 'TYPE',
+        # LEN variants
         'LENGTH': 'LEN',
-        'VARIABLE LABEL': 'LABEL'
+        'SIZE': 'LEN',
+        # POS variants
+        'POSITION': 'POS',
+        'START POSITION': 'POS',
+        'COLUMN POSITION': 'POS',
+        'START': 'POS',
+        # LABEL variants
+        'VARIABLE LABEL': 'LABEL',
+        'VAR LABEL': 'LABEL',
+        'DESCRIPTION': 'LABEL',
+        'DESC': 'LABEL',
     }
 
     # Normalize the keys of the rename map so entries with extra spaces/carriage returns match
@@ -150,9 +179,6 @@ def main():
                 df.drop(columns=cols_to_drop, inplace=True)
                 print(f"DEBUG: Dropped columns {cols_to_drop} from sheet: {sheet}")
 
-            # Add the sheet name as a new column for reference
-            df['SOURCE_TAB'] = sheet
-
             # Append to the combined DataFrame
             combined_df = pd.concat([combined_df, df], ignore_index=True)
             print(f"DEBUG: Added {len(df)} rows from sheet: {sheet}")
@@ -167,7 +193,18 @@ def main():
 
     print(f"DEBUG: Total rows in combined data: {len(combined_df)}")
 
-    # Step 9: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
+    # Step 9: Normalize output to the desired column set in the required order.
+    # Any desired column not present in the data is added with empty (NaN) values;
+    # any column outside the desired set is dropped.
+    desired_columns = ['NUM', 'VARIABLE', 'TYPE', 'LEN', 'POS', 'LABEL']
+    for col in desired_columns:
+        if col not in combined_df.columns:
+            combined_df[col] = pd.NA
+            print(f"DEBUG: Added missing column '{col}' with empty values")
+    combined_df = combined_df[desired_columns]
+    print(f"DEBUG: Output normalized to columns: {desired_columns}")
+
+    # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
     csv_output_path = os.path.join(dac_documents_dir, f"{trial_name}_dictionary.csv")
     excel_output_path = os.path.join(dac_documents_dir, f"{trial_name}_dictionary.xlsx")
 
