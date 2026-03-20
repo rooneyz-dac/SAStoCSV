@@ -60,9 +60,9 @@
 #                     retained in the WORK library for inspection.
 #
 #   --log=0|1
-#       0 (default) - Suppress SAS log (.log) files; output is routed to the
-#           null device so no log file is written.
-#       1           - Save SAS log files to the output directory.
+#       1 (default) - Save SAS log files to the output directory.
+#       0           - Suppress SAS log (.log) files; output is routed to the
+#                     null device so no log file is written.
 #
 #   --lst=0|1
 #       0 (default) - Suppress SAS listing (.lst) files; output is routed
@@ -161,8 +161,8 @@ usage() {
     echo "      1           - NOTES shown in the SAS log; temporary datasets retained."
     echo ""
     echo "  --log=0|1"
-    echo "      0 (default) - Suppress SAS log (.log) files (routed to null device)."
-    echo "      1           - Save SAS log files to the output directory."
+    echo "      1 (default) - Save SAS log files to the output directory."
+    echo "      0           - Suppress SAS log (.log) files (routed to null device)."
     echo ""
     echo "  --lst=0|1"
     echo "      0 (default) - Suppress SAS listing (.lst) files."
@@ -202,7 +202,7 @@ DS_INDEX=""
 DS_CAT_THRESHOLD="10"
 DS_WHERE=""
 DS_DEBUG="0"
-DS_LOG="0"
+DS_LOG="1"
 DS_LST="0"
 
 # Parse remaining flag arguments
@@ -276,10 +276,10 @@ fi
 SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
 
 # Build the SAS -log and -print arguments based on the --log and --lst toggles.
-# When DS_LOG=0 (default), suppress .log output using the null device.
-# When DS_LOG=1, save .log files to the output directory.
+# When DS_LOG=1 (default), save .log files to the output directory.
+# When DS_LOG=0, suppress .log output using the null device.
 # When DS_LST=1, save .lst files to the output directory.
-# When DS_LST=0 (default), suppress .lst output using the null device.
+# When DS_LST=0 (default), omit the -print flag (SAS uses its default destination).
 
 # Detect null device (used when suppressing .log or .lst output)
 if [ -e /dev/null ]; then
@@ -321,8 +321,11 @@ echo "=========================================="
 # 1. Run SAS to XPT conversion
 echo "[1/6] Converting SAS datasets to XPT format..."
 LOG_ARG_1=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/sas_to_xpt.log" || echo "$NULL_DEVICE")
-LST_ARG_1=$([ "$LST_ENABLED" = "1" ] && echo "$OUTPUT_DIR/sas_to_xpt.lst" || echo "$NULL_DEVICE")
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$LOG_ARG_1" -print "$LST_ARG_1"
+SAS_PRINT_1=()
+if [ "$LST_ENABLED" = "1" ]; then
+    SAS_PRINT_1=(-print "$OUTPUT_DIR/sas_to_xpt.lst")
+fi
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$LOG_ARG_1" "${SAS_PRINT_1[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/sas_to_xpt.log")"
 
 # Check if XPT files were converted to SAS7BDAT (DAC_SDTM folder created)
@@ -338,30 +341,42 @@ fi
 # 2. Run SAS to CSV conversion
 echo "[2/6] Converting SAS datasets to CSV..."
 LOG_ARG_2=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/sas_to_csv.log" || echo "$NULL_DEVICE")
-LST_ARG_2=$([ "$LST_ENABLED" = "1" ] && echo "$OUTPUT_DIR/sas_to_csv.lst" || echo "$NULL_DEVICE")
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$LOG_ARG_2" -print "$LST_ARG_2"
+SAS_PRINT_2=()
+if [ "$LST_ENABLED" = "1" ]; then
+    SAS_PRINT_2=(-print "$OUTPUT_DIR/sas_to_csv.lst")
+fi
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$LOG_ARG_2" "${SAS_PRINT_2[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/sas_to_csv.log")"
 
 # 3. Generate variable information and capture output file location
 echo "[3/6] Generating variable information document..."
 LOG_ARG_3=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/variable_info.log" || echo "$NULL_DEVICE")
-LST_ARG_3=$([ "$LST_ENABLED" = "1" ] && echo "$OUTPUT_DIR/variable_info.lst" || echo "$NULL_DEVICE")
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$LOG_ARG_3" -print "$LST_ARG_3"
+SAS_PRINT_3=()
+if [ "$LST_ENABLED" = "1" ]; then
+    SAS_PRINT_3=(-print "$OUTPUT_DIR/variable_info.lst")
+fi
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$LOG_ARG_3" "${SAS_PRINT_3[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/variable_info.log")"
 
 # 4. Generate data specifications
 echo "[4/6] Generating data specifications document..."
 DATA_SPECS_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|index=${DS_INDEX}|cat_threshold=${DS_CAT_THRESHOLD}|format=${DS_FORMAT}|order=${DS_ORDER}|where=${DS_WHERE}|debug=${DS_DEBUG}"
 LOG_ARG_4=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/data_specs.log" || echo "$NULL_DEVICE")
-LST_ARG_4=$([ "$LST_ENABLED" = "1" ] && echo "$OUTPUT_DIR/data_specs.lst" || echo "$NULL_DEVICE")
-"$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$LOG_ARG_4" -print "$LST_ARG_4"
+SAS_PRINT_4=()
+if [ "$LST_ENABLED" = "1" ]; then
+    SAS_PRINT_4=(-print "$OUTPUT_DIR/data_specs.lst")
+fi
+"$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$LOG_ARG_4" "${SAS_PRINT_4[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/data_specs.log")"
 
 # 5. Generate library information
 echo "[5/6] Generating library information document..."
 LOG_ARG_5=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/library_info.log" || echo "$NULL_DEVICE")
-LST_ARG_5=$([ "$LST_ENABLED" = "1" ] && echo "$OUTPUT_DIR/library_info.lst" || echo "$NULL_DEVICE")
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" -print "$LST_ARG_5"
+SAS_PRINT_5=()
+if [ "$LST_ENABLED" = "1" ]; then
+    SAS_PRINT_5=(-print "$OUTPUT_DIR/library_info.lst")
+fi
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/library_info.log")"
 
 # Extract variable info file path from log
