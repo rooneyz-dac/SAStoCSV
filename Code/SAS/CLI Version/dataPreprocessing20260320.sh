@@ -28,12 +28,14 @@
 #   --cat-threshold=VALUE  Category threshold for data specs (default: 10)
 #   --where=VALUE          WHERE clause filter for data specs
 #   --debug=0|1            Debug mode: 0|1 (default: 0)
+#   --lst=0|1              Generate SAS listing (.lst) files: 0|1 (default: 0)
 #
 # Examples:
 #   ./dataPreprocessing20260320.sh "C:/data/input"
 #   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output"
 #   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
 #   ./dataPreprocessing20260320.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
+#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --lst=1
 #
 # Output Structure:
 #   output_directory/
@@ -46,6 +48,7 @@
 #   │   ├── library_info_*.xlsx
 #   │   └── *_dictionary.xlsx
 #   ├── *.log                 - SAS execution logs
+#   ├── *.lst                 - SAS listing files (only when --lst=1)
 #   └── pipeline_vars.env     - Environment variables for chaining scripts
 #
 # Requirements:
@@ -90,11 +93,13 @@ usage() {
     echo "  --cat-threshold=VALUE  Category threshold for data specs (default: 10)"
     echo "  --where=VALUE          WHERE clause filter for data specs"
     echo "  --debug=0|1            Debug mode: 0|1 (default: 0)"
+    echo "  --lst=0|1              Generate SAS listing (.lst) files: 0|1 (default: 0)"
     echo ""
     echo "Examples:"
     echo "  ./dataPreprocessing20260320.sh 'C:/data/input'"
     echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output'"
     echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
+    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --lst=1"
     exit 1
 }
 
@@ -123,6 +128,7 @@ DS_INDEX=""
 DS_CAT_THRESHOLD="10"
 DS_WHERE=""
 DS_DEBUG="0"
+DS_LST="0"
 
 # Parse remaining flag arguments
 for arg in "$@"; do
@@ -147,6 +153,9 @@ for arg in "$@"; do
             ;;
         --debug=*)
             DS_DEBUG="${arg#*=}"
+            ;;
+        --lst=*)
+            DS_LST="${arg#*=}"
             ;;
         *)
             echo "Error: Unknown option: $arg"
@@ -188,6 +197,22 @@ fi
 # Build base SYSPARM for most SAS scripts
 SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
 
+# Build the SAS -print option based on the --lst toggle
+# When DS_LST=1, save .lst files to the output directory.
+# When DS_LST=0 (default), suppress .lst output using the null device.
+if [ "$DS_LST" = "1" ]; then
+    # .lst files will be specified per SAS call using the output directory
+    LST_ENABLED=1
+else
+    # Detect null device for suppressing .lst output
+    if [ -e /dev/null ]; then
+        NULL_DEVICE="/dev/null"
+    else
+        NULL_DEVICE="NUL"
+    fi
+    LST_ENABLED=0
+fi
+
 echo "=========================================="
 echo "Data Preprocessing Pipeline"
 echo "=========================================="
@@ -202,11 +227,16 @@ echo "  Index:          ${DS_INDEX:-<none>}"
 echo "  Cat Threshold:  $DS_CAT_THRESHOLD"
 echo "  Where:          ${DS_WHERE:-<none>}"
 echo "  Debug:          $DS_DEBUG"
+echo "Generate LST Files: $DS_LST"
 echo "=========================================="
 
 # 1. Run SAS to XPT conversion
 echo "[1/6] Converting SAS datasets to XPT format..."
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$OUTPUT_DIR/sas_to_xpt.log"
+if [ "$LST_ENABLED" = "1" ]; then
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$OUTPUT_DIR/sas_to_xpt.log" -print "$OUTPUT_DIR/sas_to_xpt.lst"
+else
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$OUTPUT_DIR/sas_to_xpt.log" -print "$NULL_DEVICE"
+fi
 echo "      Complete. Log: $OUTPUT_DIR/sas_to_xpt.log"
 
 # Check if XPT files were converted to SAS7BDAT (DAC_SDTM folder created)
@@ -221,23 +251,39 @@ fi
 
 # 2. Run SAS to CSV conversion
 echo "[2/6] Converting SAS datasets to CSV..."
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$OUTPUT_DIR/sas_to_csv.log"
+if [ "$LST_ENABLED" = "1" ]; then
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$OUTPUT_DIR/sas_to_csv.log" -print "$OUTPUT_DIR/sas_to_csv.lst"
+else
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$OUTPUT_DIR/sas_to_csv.log" -print "$NULL_DEVICE"
+fi
 echo "      Complete. Log: $OUTPUT_DIR/sas_to_csv.log"
 
 # 3. Generate variable information and capture output file location
 echo "[3/6] Generating variable information document..."
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$OUTPUT_DIR/variable_info.log"
+if [ "$LST_ENABLED" = "1" ]; then
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$OUTPUT_DIR/variable_info.log" -print "$OUTPUT_DIR/variable_info.lst"
+else
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$OUTPUT_DIR/variable_info.log" -print "$NULL_DEVICE"
+fi
 echo "      Complete. Log: $OUTPUT_DIR/variable_info.log"
 
 # 4. Generate data specifications
 echo "[4/6] Generating data specifications document..."
 DATA_SPECS_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|index=${DS_INDEX}|cat_threshold=${DS_CAT_THRESHOLD}|format=${DS_FORMAT}|order=${DS_ORDER}|where=${DS_WHERE}|debug=${DS_DEBUG}"
-"$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$OUTPUT_DIR/data_specs.log"
+if [ "$LST_ENABLED" = "1" ]; then
+    "$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$OUTPUT_DIR/data_specs.log" -print "$OUTPUT_DIR/data_specs.lst"
+else
+    "$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$OUTPUT_DIR/data_specs.log" -print "$NULL_DEVICE"
+fi
 echo "      Complete. Log: $OUTPUT_DIR/data_specs.log"
 
 # 5. Generate library information
 echo "[5/6] Generating library information document..."
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$OUTPUT_DIR/library_info.log"
+if [ "$LST_ENABLED" = "1" ]; then
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$OUTPUT_DIR/library_info.log" -print "$OUTPUT_DIR/library_info.lst"
+else
+    "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$OUTPUT_DIR/library_info.log" -print "$NULL_DEVICE"
+fi
 echo "      Complete. Log: $OUTPUT_DIR/library_info.log"
 
 # Extract variable info file path from log
