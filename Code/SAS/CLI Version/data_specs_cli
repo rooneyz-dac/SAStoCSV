@@ -10,16 +10,27 @@
 |   - Added input/output path parsing from SYSPARM
 |   - Added automatic creation of DAC_Documents folder
 |   - Added path validation
+| 2026-03-20: Extended SYSPARM to support optional macro parameters
+|   - Optional params passed as key=value pairs after output dir
 *------------------------------------------------------------------*
 | PURPOSE
 | Create a data specifications sheet for a designated library with
 | CLI parameter support for automated workflows.
 |
 | USAGE:
-|   sas -sysparm "input_folder|output_folder" -sysin data_specs_cli.sas
+|   sas -sysparm "input_folder|output_folder[|key=val|...]" -sysin data_specs_cli.sas
+|
+| OPTIONAL SYSPARM PARAMETERS (pipe-delimited key=value pairs):
+|   index=<vars>            Index variable(s)
+|   cat_threshold=<n>       Category threshold (default: 10)
+|   format=long|condensed|wide  Output format (default: long)
+|   order=varnum|name       Variable order (default: varnum)
+|   where=<condition>       WHERE clause filter
+|   debug=0|1               Debug mode (default: 0)
 |
 | EXAMPLES:
 |   sas -sysparm "C:\data\input|C:\data\output" -sysin data_specs_cli.sas
+|   sas -sysparm "C:\data\input|C:\data\output|format=wide|order=name" -sysin data_specs_cli.sas
 |
 *------------------------------------------------------------------*/
 
@@ -48,7 +59,43 @@
 
     %if &pipe_pos > 0 %then %do;
         %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
-        %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+        %local remaining pipe2_pos;
+        %let remaining = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+
+        /* Check for additional pipe-separated optional parameters */
+        %let pipe2_pos = %sysfunc(findc(&remaining, |));
+        %if &pipe2_pos > 0 %then %do;
+            %let outdir = %substr(&remaining, 1, %eval(&pipe2_pos - 1));
+            %local extra_params ep_count ep_i ep_curr ep_name eq_pos ep_value;
+            %let extra_params = %substr(&remaining, %eval(&pipe2_pos + 1));
+            %let ep_count = %sysfunc(countw(&extra_params, |));
+            %do ep_i = 1 %to &ep_count;
+                %let ep_curr = %scan(&extra_params, &ep_i, |);
+                %let eq_pos = %sysfunc(findc(&ep_curr, =));
+                %if &eq_pos > 0 %then %do;
+                    %let ep_name = %qupcase(%substr(&ep_curr, 1, %eval(&eq_pos - 1)));
+                    %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
+                    %if &ep_name = INDEX %then %let index = &ep_value;
+                    %else %if &ep_name = CAT_THRESHOLD %then %do;
+                        %if %sysevalf(%superq(ep_value)^=,boolean) %then %let cat_threshold = &ep_value;
+                    %end;
+                    %else %if &ep_name = FORMAT %then %do;
+                        %if %sysevalf(%superq(ep_value)^=,boolean) %then %let format = &ep_value;
+                    %end;
+                    %else %if &ep_name = ORDER %then %do;
+                        %if %sysevalf(%superq(ep_value)^=,boolean) %then %let order = &ep_value;
+                    %end;
+                    %else %if &ep_name = WHERE %then %let where = &ep_value;
+                    %else %if &ep_name = DEBUG %then %do;
+                        %if %sysevalf(%superq(ep_value)^=,boolean) %then %let debug = &ep_value;
+                    %end;
+                %end;
+            %end;
+            %put DEBUG: Parsed extra params: index=&index cat_threshold=&cat_threshold format=&format order=&order debug=&debug;
+        %end;
+        %else %do;
+            %let outdir = &remaining;
+        %end;
     %end;
     %else %do;
         %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
