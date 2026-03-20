@@ -14,16 +14,26 @@
 #   - Builds trial dictionary from variable metadata
 #
 # Usage:
-#   ./dataPreprocessing.sh <input_directory> <output_directory> [trial_name]
+#   ./dataPreprocessing.sh <input_directory> [output_directory] [OPTIONS]
 #
 # Arguments:
-#   input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt)
-#   output_directory - Path where outputs and documentation will be saved
-#   trial_name       - (Optional) Name for trial dictionary; defaults to YYYYMMDD
+#   input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
+#   output_directory - Path where outputs and documentation will be saved [optional, default: E:\output]
+#
+# Options:
+#   --trial-name=NAME      Name for trial dictionary (default: YYYYMMDD)
+#   --format=VALUE         Data specs format: long|condensed|wide (default: long)
+#   --order=VALUE          Variable order: varnum|name (default: varnum)
+#   --index=VALUE          Index variable(s) for data specs
+#   --cat-threshold=VALUE  Category threshold for data specs (default: 10)
+#   --where=VALUE          WHERE clause filter for data specs
+#   --debug=0|1            Debug mode: 0|1 (default: 0)
 #
 # Examples:
-#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output" FLINT2
-#   ./dataPreprocessing.sh "/path/to/sas/data" "/path/to/output"
+#   ./dataPreprocessing.sh "C:/data/input"
+#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output"
+#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
+#   ./dataPreprocessing.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
 #
 # Output Structure:
 #   output_directory/
@@ -69,21 +79,94 @@ set -e  # Exit on error
 ################################################################################
 # Data Preprocessing Pipeline Script
 # Purpose: Automates SAS data conversion and documentation generation
-# Usage: ./dataPreprocessing.sh <input_dir> <output_dir> <trial_name>
+# Usage: ./dataPreprocessing.sh <input_dir> [output_dir] [OPTIONS]
 ################################################################################
 
-# Check if correct number of arguments provided
-if [ $# -ne 3 ]; then
-    echo "Error: Invalid number of arguments"
-    echo "Usage: ./dataPreprocessing.sh <input_dir> <output_dir> <trial_name>"
-    echo "Example: ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output' 'FLINT2'"
+# Display usage information
+usage() {
+    echo "Usage: ./dataPreprocessing.sh <input_dir> [output_dir] [OPTIONS]"
+    echo ""
+    echo "Arguments:"
+    echo "  input_dir              Path to directory containing SAS datasets (required)"
+    echo "  output_dir             Path where outputs will be saved (optional, default: E:\\output)"
+    echo ""
+    echo "Options:"
+    echo "  --trial-name=NAME      Name for trial dictionary (default: YYYYMMDD)"
+    echo "  --format=VALUE         Data specs format: long|condensed|wide (default: long)"
+    echo "  --order=VALUE          Variable order: varnum|name (default: varnum)"
+    echo "  --index=VALUE          Index variable(s) for data specs"
+    echo "  --cat-threshold=VALUE  Category threshold for data specs (default: 10)"
+    echo "  --where=VALUE          WHERE clause filter for data specs"
+    echo "  --debug=0|1            Debug mode: 0|1 (default: 0)"
+    echo ""
+    echo "Examples:"
+    echo "  ./dataPreprocessing.sh 'C:/data/input'"
+    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output'"
+    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
     exit 1
+}
+
+# Require at least one argument (input directory)
+if [ $# -lt 1 ]; then
+    echo "Error: Input directory is required"
+    usage
 fi
 
-# Parse command line arguments
+# Parse first positional argument: input directory
 INPUT_DIR="$1"
-OUTPUT_DIR="$2"
-TRIAL_NAME="$3"
+shift
+
+# Parse optional second positional argument: output directory (if not a flag)
+OUTPUT_DIR="E:\\output"
+if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
+    OUTPUT_DIR="$1"
+    shift
+fi
+
+# Default values for optional data_specs parameters
+TRIAL_NAME=""
+DS_FORMAT="long"
+DS_ORDER="varnum"
+DS_INDEX=""
+DS_CAT_THRESHOLD="10"
+DS_WHERE=""
+DS_DEBUG="0"
+
+# Parse remaining flag arguments
+for arg in "$@"; do
+    case "$arg" in
+        --trial-name=*)
+            TRIAL_NAME="${arg#*=}"
+            ;;
+        --format=*)
+            DS_FORMAT="${arg#*=}"
+            ;;
+        --order=*)
+            DS_ORDER="${arg#*=}"
+            ;;
+        --index=*)
+            DS_INDEX="${arg#*=}"
+            ;;
+        --cat-threshold=*)
+            DS_CAT_THRESHOLD="${arg#*=}"
+            ;;
+        --where=*)
+            DS_WHERE="${arg#*=}"
+            ;;
+        --debug=*)
+            DS_DEBUG="${arg#*=}"
+            ;;
+        *)
+            echo "Error: Unknown option: $arg"
+            usage
+            ;;
+    esac
+done
+
+# Default TRIAL_NAME to current date if not provided
+if [ -z "$TRIAL_NAME" ]; then
+    TRIAL_NAME=$(date +%Y%m%d)
+fi
 
 # Validate input directory exists
 if [ ! -d "$INPUT_DIR" ]; then
@@ -110,7 +193,7 @@ if [ ! -f "$SAS_EXE" ]; then
     exit 1
 fi
 
-# Create SYSPARM for SAS scripts
+# Build base SYSPARM for most SAS scripts
 SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
 
 echo "=========================================="
@@ -120,6 +203,13 @@ echo "Input Directory:  $INPUT_DIR"
 echo "Output Directory: $OUTPUT_DIR"
 echo "Trial Name:       $TRIAL_NAME"
 echo "Script Directory: $SCRIPT_DIR"
+echo "Data Specs Options:"
+echo "  Format:         $DS_FORMAT"
+echo "  Order:          $DS_ORDER"
+echo "  Index:          ${DS_INDEX:-<none>}"
+echo "  Cat Threshold:  $DS_CAT_THRESHOLD"
+echo "  Where:          ${DS_WHERE:-<none>}"
+echo "  Debug:          $DS_DEBUG"
 echo "=========================================="
 
 # 1. Run SAS to XPT conversion
@@ -132,6 +222,9 @@ DAC_SDTM_DIR="${OUTPUT_DIR}/DAC_SDTM"
 if [ -d "$DAC_SDTM_DIR" ] && [ "$(ls -A "$DAC_SDTM_DIR" 2>/dev/null)" ]; then
     echo "      Note: XPT files detected and converted to SAS7BDAT format"
     echo "      SDTM datasets available in: $DAC_SDTM_DIR"
+    echo "      Updating input path to converted SAS files: $DAC_SDTM_DIR"
+    INPUT_DIR="$DAC_SDTM_DIR"
+    SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
 fi
 
 # 2. Run SAS to CSV conversion
@@ -146,7 +239,8 @@ echo "      Complete. Log: $OUTPUT_DIR/variable_info.log"
 
 # 4. Generate data specifications
 echo "[4/6] Generating data specifications document..."
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20251122.sas" -log "$OUTPUT_DIR/data_specs.log"
+DATA_SPECS_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|index=${DS_INDEX}|cat_threshold=${DS_CAT_THRESHOLD}|format=${DS_FORMAT}|order=${DS_ORDER}|where=${DS_WHERE}|debug=${DS_DEBUG}"
+"$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20251122.sas" -log "$OUTPUT_DIR/data_specs.log"
 echo "      Complete. Log: $OUTPUT_DIR/data_specs.log"
 
 # 5. Generate library information
