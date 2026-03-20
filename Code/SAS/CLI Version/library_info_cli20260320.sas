@@ -1,26 +1,24 @@
 /*------------------------------------------------------------------*
-| PROGRAM NAME : variable_info_cli20251122.sas
-| SHORT DESC   : Creates a variable information document with CLI
+| PROGRAM NAME : library_info_cli20260320.sas
+| SHORT DESC   : Creates a library information document with CLI
 |                parameter support
 *------------------------------------------------------------------*
 | CREATED BY   : Modified for CLI usage
-| DATE CREATED : 2025-01-22
+| DATE CREATED : 2025-01-21
 *------------------------------------------------------------------*
 | VERSION UPDATES:
-| 2025-01-22: Initial CLI release
+| 2025-01-21: Initial CLI release
 |   - Added SYSPARM parsing for input and output directories
 |   - Added automatic creation of DAC_Documents output subfolder
 |   - Added path validation for input and output directories
 |   - Output file name includes library name and date stamp
-|   - Each dataset is placed on its own sheet in the Excel workbook
 *------------------------------------------------------------------*
 | PURPOSE
-| Creates a variable-level information report for all datasets in a
-| designated directory. For each dataset the report lists variable
-| number, name, type, length, format, informat, and label. Results
-| are exported to a multi-sheet Excel workbook (.xlsx) in the
-| DAC_Documents subfolder of the output directory, with one sheet
-| per dataset.
+| Creates a library information summary for all datasets found in a
+| designated directory. The output lists each dataset's name, label,
+| observation count, variable count, creation date, and last
+| modification date. Results are exported to an Excel workbook
+| (.xlsx) in the DAC_Documents subfolder of the output directory.
 |
 | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to the folder containing SAS datasets
@@ -34,13 +32,12 @@
 |
 | USAGE:
 |   sas -sysparm "input_directory|output_directory"
-|       -sysin variable_info_cli20251122.sas
+|       -sysin library_info_cli20260320.sas
 |
 | OUTPUT STRUCTURE:
 |   output_directory\
 |   └── DAC_Documents\
-|       └── variable_info_<libname>_<YYYYMMDD>.xlsx
-|           (one Excel sheet per dataset)
+|       └── library_info_<libname>_<YYYYMMDD>.xlsx
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
 | SAS v9.4 or Higher: Yes
@@ -54,14 +51,14 @@
 |
 | Basic usage:
 |   sas -sysparm "C:\data\input|C:\data\output"
-|       -sysin variable_info_cli20251122.sas
+|       -sysin library_info_cli20260320.sas
 |
 | Using a study-specific directory:
 |   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
-|       -sysin variable_info_cli20251122.sas
+|       -sysin library_info_cli20260320.sas
 *------------------------------------------------------------------*/
 
-%macro variable_info_cli;
+%macro library_info_cli;
     /**Parse SYSPARM for input and output paths**/
     %local sysparm_value indir outdir pipe_pos;
     %let sysparm_value = &sysparm;
@@ -130,37 +127,43 @@
     %local out_file libname_text;
     %let libname_text = %scan(&indir, -1, \);
     %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
-    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&libname_text,,'ka'))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\library_info_%sysfunc(compress(&libname_text,,'ka'))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
-    /**Get variable information**/
-    ods output variables=allvarout;
+    /**Create table of SQL library data**/
+    proc sql;
+        create table LIBINFO as
+        select * from dictionary.tables
+        where libname="INLIB";
+    quit;
 
-    proc contents data=INLIB._all_ memtype=data;
-    run;
+    /**Count number of datasets**/
+    %local ds_count;
+    proc sql noprint;
+        select count(memname) into :ds_count trimmed
+        from dictionary.tables
+        where libname="INLIB";
+    quit;
 
-    /**Sort data by dataset and variable number**/
-    proc sort data=allvarout;
-        by member num;
-    run;
+    %put NOTE: Number of datasets in library: &ds_count;
 
-    /**Create Excel output file with separate sheets per dataset**/
-    options nobyline;
+    /**Create Excel output file**/
     ods excel file="&out_file"
-        options(sheet_name="#BYVAL(member)" embedded_titles='yes');
+        options(sheet_name="Library Info" frozen_headers='yes');
 
-    proc print data=allvarout noobs label;
-        by member;
-        pageby member;
-        title "Variables in #BYVAL(member) Dataset";
-        label member='Dataset Name'
-              num='Variable Number'
-              variable='Variable Name'
-              type='Type'
-              len='Length'
-              format='Format'
-              informat='Informat'
-              label='Variable Label';
+    /**Print summary**/
+    title1 "Library Information for: &indir";
+    title2 "Total Datasets: &ds_count";
+    title3 "Generated: %sysfunc(today(),worddate.)";
+
+    proc print data=LIBINFO label;
+        var memname memlabel nobs nvar crdate modate;
+        label memname='Dataset Name'
+              memlabel='Dataset Label'
+              nobs='Observations'
+              nvar='Variables'
+              crdate='Created Date'
+              modate='Modified Date';
     run;
 
     title;
@@ -169,13 +172,13 @@
 
     /**Clean up**/
     proc datasets library=work nolist nodetails;
-        delete allvarout;
+        delete LIBINFO;
     quit;
 
     libname INLIB clear;
 
-    %put NOTE: Variable information document created: &out_file;
+    %put NOTE: Library information document created: &out_file;
 
-%mend variable_info_cli;
+%mend library_info_cli;
 
-%variable_info_cli;
+%library_info_cli;
