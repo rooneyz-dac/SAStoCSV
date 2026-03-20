@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------*
-| PROGRAM NAME : SAStoXPTcli20251121v2.sas
+| PROGRAM NAME : SAStoXPTcli20251121.sas
 | SHORT DESC   : Bidirectional batch conversion between SAS7BDAT
 |                and XPT (SAS Transport) formats via CLI
 *------------------------------------------------------------------*
@@ -40,7 +40,7 @@
 |
 | USAGE:
 |   sas -sysparm "input_directory|output_directory"
-|       -sysin SAStoXPTcli20251121v2.sas
+|       -sysin SAStoXPTcli20251121.sas
 |
 | OUTPUT STRUCTURE:
 |   output_directory\
@@ -61,15 +61,15 @@
 |
 | Convert SAS datasets to XPT format:
 |   sas -sysparm "C:\data\input|C:\data\output"
-|       -sysin SAStoXPTcli20251121v2.sas
+|       -sysin SAStoXPTcli20251121.sas
 |
 | Convert XPT files back to SAS7BDAT:
 |   sas -sysparm "C:\data\xpt_files|C:\data\output"
-|       -sysin SAStoXPTcli20251121v2.sas
+|       -sysin SAStoXPTcli20251121.sas
 |
 | Process a mixed directory (both .sas7bdat and .xpt present):
 |   sas -sysparm "C:\data\mixed|C:\data\output"
-|       -sysin SAStoXPTcli20251121v2.sas
+|       -sysin SAStoXPTcli20251121.sas
 *------------------------------------------------------------------*/
 
 %macro convert_files;

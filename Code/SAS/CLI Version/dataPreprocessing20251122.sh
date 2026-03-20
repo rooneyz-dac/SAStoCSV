@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ################################################################################
-# Script Name: dataPreprocessing.sh
+# Script Name: dataPreprocessing20251122.sh
 # Description: Automated SAS data preprocessing pipeline that converts SAS
 #              datasets between formats and generates documentation
 #
@@ -14,7 +14,7 @@
 #   - Builds trial dictionary from variable metadata
 #
 # Usage:
-#   ./dataPreprocessing.sh <input_directory> [output_directory] [OPTIONS]
+#   ./dataPreprocessing20251122.sh <input_directory> [output_directory] [OPTIONS]
 #
 # Arguments:
 #   input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
@@ -30,10 +30,10 @@
 #   --debug=0|1            Debug mode: 0|1 (default: 0)
 #
 # Examples:
-#   ./dataPreprocessing.sh "C:/data/input"
-#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output"
-#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
-#   ./dataPreprocessing.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
+#   ./dataPreprocessing20251122.sh "C:/data/input"
+#   ./dataPreprocessing20251122.sh "C:/data/input" "C:/data/output"
+#   ./dataPreprocessing20251122.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
+#   ./dataPreprocessing20251122.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
 #
 # Output Structure:
 #   output_directory/
@@ -53,13 +53,13 @@
 #   - Python 3.x with pandas
 #   - Bash shell (Git Bash on Windows)
 #   - Required SAS scripts in same directory:
-#     * SAStoXPTcli20251121v2WORKING.sas
-#     * SAStoCSVcli2InputsWORKING20251121.sas
+#     * SAStoXPTcli20251121.sas
+#     * SAStoCSVcli20251121.sas
 #     * variable_info_cli20251122.sas
 #     * data_specs_cli20251122.sas
 #     * library_info_cli20251122.sas
 #   - Required Python script:
-#     * metadata_to_dict_cli20251122.py
+#     * metadata_to_dict_cli20260105.py
 #
 # Author: [Your Name]
 # Created: 2025-11-22
@@ -76,7 +76,7 @@ set -e  # Exit on error
 
 # Display usage information
 usage() {
-    echo "Usage: ./dataPreprocessing.sh <input_dir> [output_dir] [OPTIONS]"
+    echo "Usage: ./dataPreprocessing20251122.sh <input_dir> [output_dir] [OPTIONS]"
     echo ""
     echo "Arguments:"
     echo "  input_dir              Path to directory containing SAS datasets (required)"
@@ -92,9 +92,9 @@ usage() {
     echo "  --debug=0|1            Debug mode: 0|1 (default: 0)"
     echo ""
     echo "Examples:"
-    echo "  ./dataPreprocessing.sh 'C:/data/input'"
-    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output'"
-    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
+    echo "  ./dataPreprocessing20251122.sh 'C:/data/input'"
+    echo "  ./dataPreprocessing20251122.sh 'C:/data/input' 'C:/data/output'"
+    echo "  ./dataPreprocessing20251122.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
     exit 1
 }
 
@@ -206,7 +206,7 @@ echo "=========================================="
 
 # 1. Run SAS to XPT conversion
 echo "[1/6] Converting SAS datasets to XPT format..."
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20251121v2WORKING.sas" -log "$OUTPUT_DIR/sas_to_xpt.log"
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20251121.sas" -log "$OUTPUT_DIR/sas_to_xpt.log"
 echo "      Complete. Log: $OUTPUT_DIR/sas_to_xpt.log"
 
 # Check if XPT files were converted to SAS7BDAT (DAC_SDTM folder created)
@@ -221,7 +221,7 @@ fi
 
 # 2. Run SAS to CSV conversion
 echo "[2/6] Converting SAS datasets to CSV..."
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli2InputsWORKING20251121.sas" -log "$OUTPUT_DIR/sas_to_csv.log"
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20251121.sas" -log "$OUTPUT_DIR/sas_to_csv.log"
 echo "      Complete. Log: $OUTPUT_DIR/sas_to_csv.log"
 
 # 3. Generate variable information and capture output file location
@@ -276,7 +276,7 @@ fi
 # Execute Python script if command found
 if [ -n "$PYTHON_CMD" ]; then
     echo "      Using Python command: $PYTHON_CMD"
-    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20251122.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME"
+    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260105.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME"
     if [ $? -eq 0 ]; then
         echo "      Complete."
     else
