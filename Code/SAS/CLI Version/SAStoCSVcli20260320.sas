@@ -128,31 +128,26 @@ filename errlog "&out_dir.\error_log.txt";
 
 /* 5) Get list of all datasets in INDIR */
 proc sql noprint;
-    create table work._dslist as
     select memname
+    into :_dslist separated by '|'
     from dictionary.tables
     where libname = upcase('INLIB')
+      and memtype = 'DATA'
     order by memname;
 quit;
 
 /* 6) Macro to export all datasets to CSV in csv_dir */
 %macro export_all_to_csv;
-    %local n i dsname;
-    proc sql noprint;
-        select count(*) into :n trimmed from work._dslist;
-    quit;
+    %local i dsname;
 
-    %if &n = 0 %then %do;
+    %if %length(&_dslist) = 0 %then %do;
         %put NOTE: No SAS datasets found in &in_dir;
         %return;
     %end;
 
-    %do i = 1 %to &n;
-        proc sql noprint;
-            select memname into :dsname trimmed
-            from work._dslist
-            where monotonic() = &i;
-        quit;
+    %let i = 1;
+    %do %while(%scan(&_dslist, &i, |) ne );
+        %let dsname = %scan(&_dslist, &i, |);
         %let csvfile = &csv_dir.\&dsname..csv;
         %put NOTE: Exporting INLIB.&dsname to &csvfile;
         proc export data=inlib.&dsname
@@ -160,6 +155,7 @@ quit;
             dbms=csv
             replace;
         run;
+        %let i = %eval(&i + 1);
     %end;
 %mend export_all_to_csv;
 
