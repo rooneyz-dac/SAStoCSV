@@ -21,15 +21,53 @@
 #   output_directory - Path where outputs and documentation will be saved [optional, default: E:\output]
 #
 # Options:
-#   --trial-name=NAME      Name for trial dictionary (default: YYYYMMDD)
-#   --format=VALUE         Data specs format: long|condensed|wide (default: long)
-#   --order=VALUE          Variable order: varnum|name (default: varnum)
-#   --index=VALUE          Index variable(s) for data specs
-#   --cat-threshold=VALUE  Category threshold for data specs (default: 10)
-#   --where=VALUE          WHERE clause filter for data specs
-#   --debug=0|1            Debug mode: 0|1 (default: 0)
-#   --log=0|1              Generate SAS log (.log) files: 0|1 (default: 1)
-#   --lst=0|1              Generate SAS listing (.lst) files: 0|1 (default: 0)
+#   --trial-name=NAME
+#       Name used for the trial dictionary output file.
+#       Default: current date (YYYYMMDD).
+#
+#   --format=long|condensed|wide
+#       Controls how variables are listed in each dataset summary tab.
+#         long      - One row per variable value (default).
+#         condensed - One row per variable with values collapsed into a
+#                     single cell.
+#         wide      - One row per dataset with variables as columns.
+#
+#   --order=varnum|name
+#       Determines the order in which variables appear in dataset summary tabs.
+#         varnum - Order by position in the dataset (default).
+#         name   - Order alphabetically by variable name.
+#
+#   --index=VAR[,VAR...]
+#       One or more index variables (e.g. USUBJID) used to count distinct
+#       patients or other units of interest within each dataset.
+#       Default: none.
+#
+#   --cat-threshold=N
+#       Maximum number of distinct levels a variable may have before
+#       individual frequencies and percentages are replaced with
+#       distribution statistics (mean, std, min, max). Must be >= 0.
+#       Default: 10.
+#
+#   --where=CLAUSE
+#       A WHERE clause applied to the SAS dictionary metadata to subset
+#       which datasets are included in the specifications document.
+#       Example: --where=%str(memname in ('AE','CM','DM'))
+#       Default: none (all datasets included).
+#
+#   --debug=0|1
+#       0 (default) - NOTES suppressed; temporary work datasets cleaned up.
+#       1           - NOTES shown in the SAS log; temporary datasets
+#                     retained in the WORK library for inspection.
+#
+#   --log=0|1
+#       0 - Suppress SAS log (.log) files; output is routed to the null
+#           device so no log file is written.
+#       1 (default) - Save SAS log files to the output directory.
+#
+#   --lst=0|1
+#       0 (default) - Suppress SAS listing (.lst) files; output is routed
+#                     to the null device so no listing file is written.
+#       1           - Save SAS listing files to the output directory.
 #
 # Examples:
 #   ./dataPreprocessing20260320.sh "C:/data/input"
@@ -88,15 +126,47 @@ usage() {
     echo "  output_dir             Path where outputs will be saved (optional, default: E:\\output)"
     echo ""
     echo "Options:"
-    echo "  --trial-name=NAME      Name for trial dictionary (default: YYYYMMDD)"
-    echo "  --format=VALUE         Data specs format: long|condensed|wide (default: long)"
-    echo "  --order=VALUE          Variable order: varnum|name (default: varnum)"
-    echo "  --index=VALUE          Index variable(s) for data specs"
-    echo "  --cat-threshold=VALUE  Category threshold for data specs (default: 10)"
-    echo "  --where=VALUE          WHERE clause filter for data specs"
-    echo "  --debug=0|1            Debug mode: 0|1 (default: 0)"
-    echo "  --log=0|1              Generate SAS log (.log) files: 0|1 (default: 1)"
-    echo "  --lst=0|1              Generate SAS listing (.lst) files: 0|1 (default: 0)"
+    echo "  --trial-name=NAME"
+    echo "      Name used for the trial dictionary output file."
+    echo "      Default: current date (YYYYMMDD)."
+    echo ""
+    echo "  --format=long|condensed|wide"
+    echo "      Controls how variables are listed in each dataset summary tab."
+    echo "        long      - One row per variable value (default)."
+    echo "        condensed - One row per variable with values collapsed into a single cell."
+    echo "        wide      - One row per dataset with variables as columns."
+    echo ""
+    echo "  --order=varnum|name"
+    echo "      Determines the order in which variables appear in dataset summary tabs."
+    echo "        varnum - Order by position in the dataset (default)."
+    echo "        name   - Order alphabetically by variable name."
+    echo ""
+    echo "  --index=VAR[,VAR...]"
+    echo "      One or more index variables (e.g. USUBJID) used to count distinct"
+    echo "      patients or other units of interest within each dataset."
+    echo "      Default: none."
+    echo ""
+    echo "  --cat-threshold=N"
+    echo "      Maximum number of distinct levels a variable may have before"
+    echo "      individual frequencies and percentages are replaced with distribution"
+    echo "      statistics (mean, std, min, max). Must be >= 0. Default: 10."
+    echo ""
+    echo "  --where=CLAUSE"
+    echo "      A WHERE clause applied to the SAS dictionary metadata to subset"
+    echo "      which datasets are included in the specifications document."
+    echo "      Default: none (all datasets included)."
+    echo ""
+    echo "  --debug=0|1"
+    echo "      0 (default) - NOTES suppressed; temporary work datasets cleaned up."
+    echo "      1           - NOTES shown in the SAS log; temporary datasets retained."
+    echo ""
+    echo "  --log=0|1"
+    echo "      0 - Suppress SAS log (.log) files (routed to null device)."
+    echo "      1 (default) - Save SAS log files to the output directory."
+    echo ""
+    echo "  --lst=0|1"
+    echo "      0 (default) - Suppress SAS listing (.lst) files."
+    echo "      1           - Save SAS listing files to the output directory."
     echo ""
     echo "Examples:"
     echo "  ./dataPreprocessing20260320.sh 'C:/data/input'"
@@ -244,8 +314,8 @@ echo "  Index:          ${DS_INDEX:-<none>}"
 echo "  Cat Threshold:  $DS_CAT_THRESHOLD"
 echo "  Where:          ${DS_WHERE:-<none>}"
 echo "  Debug:          $DS_DEBUG"
-echo "Generate LOG:     $DS_LOG"
-echo "Generate LST:     $DS_LST"
+echo "  Log Files:      $DS_LOG"
+echo "  Listing Files:  $DS_LST"
 echo "=========================================="
 
 # 1. Run SAS to XPT conversion
