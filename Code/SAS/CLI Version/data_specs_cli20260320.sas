@@ -161,7 +161,10 @@
                 %let eq_pos = %sysfunc(findc(&ep_curr, =));
                 %if &eq_pos > 0 %then %do;
                     %let ep_name = %qupcase(%substr(&ep_curr, 1, %eval(&eq_pos - 1)));
-                    %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
+                    %if %eval(&eq_pos) < %length(&ep_curr) %then
+                        %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
+                    %else
+                        %let ep_value = ;
                     %if &ep_name = INDEX %then %let index = &ep_value;
                     %else %if &ep_name = CAT_THRESHOLD %then %do;
                         %if %sysevalf(%superq(ep_value)^=,boolean) %then %let cat_threshold = &ep_value;
@@ -240,7 +243,7 @@
     %local out_file libname_text;
     %let libname_text = %scan(&indir, -1, \);
     %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
-    %let out_file = &doc_dir\data_specs_%sysfunc(compress(&libname_text,,'ka'))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\data_specs_%sysfunc(compress(&libname_text,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**See if the listing output is turned on**/
