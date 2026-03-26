@@ -27,8 +27,10 @@ Behavior:
       Any column not in the desired set is dropped; any desired column absent from the source
       is added with empty (NaN) values.
     - Concatenates all sheets and writes outputs to:
-        `DAC_Documents/dictionary_{TRIAL_NAME}_{YYYYMMDD}.csv`
-        `DAC_Documents/dictionary_{TRIAL_NAME}_{YYYYMMDD}.xlsx`
+        `DAC_Documents/dictionary{GGG_PARENT}{GG_PARENT}{G_PARENT}{YYYYMMDD}.csv`
+        `DAC_Documents/dictionary{GGG_PARENT}{GG_PARENT}{G_PARENT}{YYYYMMDD}.xlsx`
+    where GGG_PARENT, GG_PARENT, and G_PARENT are the third-to-last, second-to-last,
+    and last segments of the output directory path, respectively.
 
 Exit codes:
     0   Success
@@ -207,8 +209,13 @@ def main():
 
     # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
     date_stamp = date.today().strftime('%Y%m%d')
-    csv_output_path = os.path.join(dac_documents_dir, f"dictionary_{trial_name}_{date_stamp}.csv")
-    excel_output_path = os.path.join(dac_documents_dir, f"dictionary_{trial_name}_{date_stamp}.xlsx")
+    # Derive parent directory components from the output base directory
+    path_parts = [p for p in output_base_dir.replace('\\', '/').split('/') if p]
+    g_parent = path_parts[-1] if len(path_parts) >= 1 else ''
+    gg_parent = path_parts[-2] if len(path_parts) >= 2 else ''
+    ggg_parent = path_parts[-3] if len(path_parts) >= 3 else ''
+    csv_output_path = os.path.join(dac_documents_dir, f"dictionary{ggg_parent}{gg_parent}{g_parent}{date_stamp}.csv")
+    excel_output_path = os.path.join(dac_documents_dir, f"dictionary{ggg_parent}{gg_parent}{g_parent}{date_stamp}.xlsx")
 
     try:
         combined_df.to_csv(csv_output_path, index=False)
