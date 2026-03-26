@@ -130,7 +130,7 @@
     %local out_file libname_text;
     %let libname_text = %scan(&indir, -1, \);
     %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
-    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&libname_text,,'ka'))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&libname_text,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**Get variable information**/

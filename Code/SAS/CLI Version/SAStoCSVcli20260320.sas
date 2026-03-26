@@ -94,33 +94,42 @@ libname inlib "&in_dir";
 /* 3) Create output folder if it does not exist */
 options noxwait noxsync;
 data _null_;
-    length out $260 parent $260;
+    length out $260 parent $260 rc $260;
     out = "&out_dir";
 
     /* Remove trailing backslash if present */
     if substr(out, length(out), 1) = '\' then
         out = substr(out, 1, length(out) - 1);
 
-    /* Get parent directory for dcreate */
-    pos = length(out) - index(reverse(out), '\') + 1;
-    if pos > 0 and pos < length(out) then do;
-        parent = substr(out, 1, pos - 1);
-        folder = substr(out, pos + 1);
-        rc = dcreate(folder, parent);
-    end;
+    if fileexist(out) then
+        put "NOTE: Directory &out_dir already exists.";
     else do;
-        rc = dcreate(out, '');
-    end;
+        /* Get parent directory for dcreate */
+        pos = length(out) - index(reverse(out), '\') + 1;
+        if pos > 0 and pos < length(out) then do;
+            parent = substr(out, 1, pos - 1);
+            folder = substr(out, pos + 1);
+            rc = dcreate(folder, parent);
+        end;
+        else do;
+            rc = dcreate(out, '');
+        end;
 
-    if rc = '' then put "NOTE: Directory &out_dir already exists or created successfully.";
-    else put "ERROR: Could not create directory &out_dir";
+        if rc ne '' then put "NOTE: Created directory &out_dir successfully.";
+        else put "ERROR: Could not create directory &out_dir";
+    end;
 run;
 
 /* 3a) Create DAC_CSV subfolder */
 data _null_;
-    rc = dcreate('DAC_CSV', "&out_dir");
-    if rc = '' then put "NOTE: Directory &csv_dir already exists or created successfully.";
-    else put "ERROR: Could not create directory &csv_dir";
+    length rc $260;
+    if fileexist("&csv_dir") then
+        put "NOTE: Directory &csv_dir already exists.";
+    else do;
+        rc = dcreate('DAC_CSV', "&out_dir");
+        if rc ne '' then put "NOTE: Created directory &csv_dir successfully.";
+        else put "ERROR: Could not create directory &csv_dir";
+    end;
 run;
 
 /* 4) Set up error log file in output directory */
