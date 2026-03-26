@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ################################################################################
-# Script Name: dataPreprocessing20260320.sh
+# Script Name: dataPreprocessing.sh
 # Description: Automated SAS data preprocessing pipeline that converts SAS
 #              datasets between formats and generates documentation
 #
@@ -14,7 +14,7 @@
 #   - Builds trial dictionary from variable metadata
 #
 # Usage:
-#   ./dataPreprocessing20260320.sh <input_directory> [output_directory] [OPTIONS]
+#   ./dataPreprocessing.sh <input_directory> [output_directory] [OPTIONS]
 #
 # Arguments:
 #   input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
@@ -70,12 +70,12 @@
 #       1           - Save SAS listing files to the output directory.
 #
 # Examples:
-#   ./dataPreprocessing20260320.sh "C:/data/input"
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output"
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
-#   ./dataPreprocessing20260320.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --lst=1
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --log=1
+#   ./dataPreprocessing.sh "C:/data/input"
+#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output"
+#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
+#   ./dataPreprocessing.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
+#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output" --lst=1
+#   ./dataPreprocessing.sh "C:/data/input" "C:/data/output" --log=1
 #
 # Output Structure:
 #   output_directory/
@@ -96,13 +96,13 @@
 #   - Python 3.x with pandas
 #   - Bash shell (Git Bash on Windows)
 #   - Required SAS scripts in same directory:
-#     * SAStoXPTcli20260320.sas
-#     * SAStoCSVcli20260320.sas
-#     * variable_info_cli20260320.sas
-#     * data_specs_cli20260320.sas
-#     * library_info_cli20260320.sas
+#     * SAStoXPT.sas
+#     * SAStoCSV.sas
+#     * variable_info.sas
+#     * data_specs.sas
+#     * library_info.sas
 #   - Required Python script:
-#     * metadata_to_dict_cli20260320.py
+#     * metadata_to_dict.py
 #
 # Author: [Your Name]
 # Created: 2025-11-22
@@ -119,7 +119,7 @@ set -e  # Exit on error
 
 # Display usage information
 usage() {
-    echo "Usage: ./dataPreprocessing20260320.sh <input_dir> [output_dir] [OPTIONS]"
+    echo "Usage: ./dataPreprocessing.sh <input_dir> [output_dir] [OPTIONS]"
     echo ""
     echo "Arguments:"
     echo "  input_dir              Path to directory containing SAS datasets (required)"
@@ -169,11 +169,11 @@ usage() {
     echo "      1           - Save SAS listing files to the output directory."
     echo ""
     echo "Examples:"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input'"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output'"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --lst=1"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --log=1"
+    echo "  ./dataPreprocessing.sh 'C:/data/input'"
+    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output'"
+    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
+    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output' --lst=1"
+    echo "  ./dataPreprocessing.sh 'C:/data/input' 'C:/data/output' --log=1"
     exit 1
 }
 
@@ -325,7 +325,7 @@ SAS_PRINT_1=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_1=(-print "$OUTPUT_DIR/sas_to_xpt.lst")
 fi
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$LOG_ARG_1" "${SAS_PRINT_1[@]}"
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPT.sas" -log "$LOG_ARG_1" "${SAS_PRINT_1[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/sas_to_xpt.log")"
 
 # Check if XPT files were converted to SAS7BDAT (DAC_SDTM folder created)
@@ -345,7 +345,7 @@ SAS_PRINT_2=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_2=(-print "$OUTPUT_DIR/sas_to_csv.lst")
 fi
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$LOG_ARG_2" "${SAS_PRINT_2[@]}"
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSV.sas" -log "$LOG_ARG_2" "${SAS_PRINT_2[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/sas_to_csv.log")"
 
 # 3. Generate variable information and capture output file location
@@ -355,7 +355,7 @@ SAS_PRINT_3=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_3=(-print "$OUTPUT_DIR/variable_info.lst")
 fi
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$LOG_ARG_3" "${SAS_PRINT_3[@]}"
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info.sas" -log "$LOG_ARG_3" "${SAS_PRINT_3[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/variable_info.log")"
 
 # 4. Generate data specifications
@@ -366,7 +366,7 @@ SAS_PRINT_4=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_4=(-print "$OUTPUT_DIR/data_specs.lst")
 fi
-"$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$LOG_ARG_4" "${SAS_PRINT_4[@]}"
+"$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs.sas" -log "$LOG_ARG_4" "${SAS_PRINT_4[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/data_specs.log")"
 
 # 5. Generate library information
@@ -376,7 +376,7 @@ SAS_PRINT_5=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_5=(-print "$OUTPUT_DIR/library_info.lst")
 fi
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
+"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/library_info.log")"
 
 # Extract variable info file path from log
@@ -417,7 +417,7 @@ fi
 # Execute Python script if command found
 if [ -n "$PYTHON_CMD" ]; then
     echo "      Using Python command: $PYTHON_CMD"
-    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR"
+    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR"
     if [ $? -eq 0 ]; then
         echo "      Complete."
     else

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-metadata_to_dict_cli20260320.py
+metadata_to_dict.py
 
 Purpose:
     Build a combined trial dictionary from a metadata summary Excel workbook.
 
 Usage:
-    python metadata_to_dict_cli20260320.py <input_excel> <output_dir>
+    python metadata_to_dict.py <input_excel> <output_dir>
 
 Positional arguments:
     input_excel     Path to the metadata Excel workbook (multiple sheets expected).
@@ -71,9 +71,9 @@ def main():
     # Step 1: Parse command-line arguments
     if len(sys.argv) != 3:
         print("Error: Invalid number of arguments")
-        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir>")
+        print("Usage: python metadata_to_dict.py <input_file> <output_dir>")
         print(
-            "Example: python metadata_to_dict_cli20260320.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output`")
+            "Example: python metadata_to_dict.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output`")
         sys.exit(1)
 
     file_path = sys.argv[1]

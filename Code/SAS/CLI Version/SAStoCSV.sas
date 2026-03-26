@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------*
-| PROGRAM NAME : SAStoCSVcli20260320.sas
+| PROGRAM NAME : SAStoCSV.sas
 | SHORT DESC   : Batch converts all SAS datasets in a directory to
 |                CSV format via command-line interface
 *------------------------------------------------------------------*
@@ -30,7 +30,7 @@
 |
 | USAGE:
 |   sas -sysparm "input_directory|output_directory"
-|       -sysin SAStoCSVcli20260320.sas
+|       -sysin SAStoCSV.sas
 |
 | OUTPUT STRUCTURE:
 |   output_directory\
@@ -49,11 +49,11 @@
 |
 | Basic usage:
 |   sas -sysparm "C:\data\input|C:\data\output"
-|       -sysin SAStoCSVcli20260320.sas
+|       -sysin SAStoCSV.sas
 |
 | Using a study-specific output folder:
 |   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
-|       -sysin SAStoCSVcli20260320.sas
+|       -sysin SAStoCSV.sas
 *------------------------------------------------------------------*/
 
 /* 1) Parse SYSPARM to get input and output directories */

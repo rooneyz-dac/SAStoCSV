@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------*
-| PROGRAM NAME : variable_info_cli20260320.sas
+| PROGRAM NAME : variable_info.sas
 | SHORT DESC   : Creates a variable information document with CLI
 |                parameter support
 *------------------------------------------------------------------*
@@ -34,7 +34,7 @@
 |
 | USAGE:
 |   sas -sysparm "input_directory|output_directory"
-|       -sysin variable_info_cli20260320.sas
+|       -sysin variable_info.sas
 |
 | OUTPUT STRUCTURE:
 |   output_directory\
@@ -54,11 +54,11 @@
 |
 | Basic usage:
 |   sas -sysparm "C:\data\input|C:\data\output"
-|       -sysin variable_info_cli20260320.sas
+|       -sysin variable_info.sas
 |
 | Using a study-specific directory:
 |   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
-|       -sysin variable_info_cli20260320.sas
+|       -sysin variable_info.sas
 *------------------------------------------------------------------*/
 
 %macro variable_info_cli;

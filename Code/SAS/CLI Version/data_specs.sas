@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------*
-| MACRO NAME  : data_specs_cli20260320
+| MACRO NAME  : data_specs
 | SHORT DESC  : Creates a specifications document on a library of
 |               datasets with CLI parameter support
 *------------------------------------------------------------------*
@@ -65,7 +65,7 @@
 |
 | USAGE:
 |   sas -sysparm "input_directory|output_directory[|key=value|...]"
-|       -sysin data_specs_cli20260320.sas
+|       -sysin data_specs.sas
 |
 | OUTPUT STRUCTURE:
 |   output_directory\
@@ -96,19 +96,19 @@
 |
 | Basic usage (default options):
 |   sas -sysparm "C:\data\input|C:\data\output"
-|       -sysin data_specs_cli20260320.sas
+|       -sysin data_specs.sas
 |
 | Wide format, alphabetical variable order:
 |   sas -sysparm "C:\data\input|C:\data\output|format=wide|order=name"
-|       -sysin data_specs_cli20260320.sas
+|       -sysin data_specs.sas
 |
 | With index variable and custom category threshold:
 |   sas -sysparm "C:\data\input|C:\data\output|index=USUBJID|cat_threshold=5"
-|       -sysin data_specs_cli20260320.sas
+|       -sysin data_specs.sas
 |
 | Full options example with debug enabled:
 |   sas -sysparm "C:\data\input|C:\data\output|index=USUBJID|format=condensed|order=name|cat_threshold=15|debug=1"
-|       -sysin data_specs_cli20260320.sas
+|       -sysin data_specs.sas
 *------------------------------------------------------------------*
 | This program is free software; you can redistribute it and/or
 | modify it under the terms of the GNU General Public License as
