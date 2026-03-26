@@ -86,7 +86,7 @@
 #   │   ├── variable_info_*.xlsx
 #   │   ├── data_specs_*.xlsx
 #   │   ├── library_info_*.xlsx
-#   │   └── metadata_to_dict_*.xlsx
+#   │   └── dictionary_*.xlsx
 #   ├── *.log                 - SAS execution logs (only when --log=1)
 #   ├── *.lst                 - SAS listing files (only when --lst=1)
 #   └── pipeline_vars.env     - Environment variables for chaining scripts
