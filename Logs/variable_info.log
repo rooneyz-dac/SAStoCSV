@@ -1,4 +1,4 @@
-1                                           The SAS System                16:55 Friday, March 20, 2026
+1                                           The SAS System              16:21 Thursday, March 26, 2026
 
 NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
 NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
@@ -19,7 +19,7 @@ NOTE: Additional host information:
  X64_DSRV16 WIN 10.0.26100  Server
 
 NOTE: SAS initialization used:
-      real time           0.36 seconds
+      real time           0.34 seconds
       cpu time            0.34 seconds
       
 1          /*------------------------------------------------------------------*
@@ -54,7 +54,7 @@ NOTE: SAS initialization used:
 30         |                    Must exist prior to execution.
 31         |
 32         | 2.0: OPTIONAL PARAMETERS
-2                                           The SAS System                16:55 Friday, March 20, 2026
+2                                           The SAS System              16:21 Thursday, March 26, 2026
 
 33         | None. All parameters are supplied via SYSPARM.
 34         |
@@ -65,7 +65,7 @@ NOTE: SAS initialization used:
 39         | OUTPUT STRUCTURE:
 40         |   output_directory\
 41         |   └── DAC_Documents\
-42         |       └── variable_info_<libname>_<YYYYMMDD>.xlsx
+42         |       └── variable_info<GGG_PARENT><GG_PARENT><G_PARENT><YYYYMMDD>.xlsx
 43         |           (one Excel sheet per dataset)
 44         *------------------------------------------------------------------*
 45         | OPERATING SYSTEM COMPATIBILITY
@@ -110,7 +110,7 @@ NOTE: SAS initialization used:
 84         
 85             /**Validate directories exist**/
 86             %local indir_exist outdir_exist;
-3                                           The SAS System                16:55 Friday, March 20, 2026
+3                                           The SAS System              16:21 Thursday, March 26, 2026
 
 87             %let indir_exist = %sysfunc(fileexist(&indir));
 88             %let outdir_exist = %sysfunc(fileexist(&outdir));
@@ -155,62 +155,63 @@ NOTE: SAS initialization used:
 127            %end;
 128        
 129            /**Set output file path**/
-130            %local out_file libname_text;
-131            %let libname_text = %scan(&indir, -1, \);
-132            %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
-133            %let out_file =
-133      ! &doc_dir\variable_info_%sysfunc(compress(&libname_text,,'ka'))_%sysfunc(today(),yymmddn8.).
-133      ! xlsx;
-134            %put DEBUG: Output file = &out_file;
-135        
-136            /**Get variable information**/
-137            ods output variables=allvarout;
-138        
-4                                           The SAS System                16:55 Friday, March 20, 2026
+130            %local out_file g_parent gg_parent ggg_parent;
+131            %let g_parent = %scan(&indir, -1, \);
+132            %let gg_parent = %scan(&indir, -2, \);
+133            %let ggg_parent = %scan(&indir, -3, \);
+134            %let out_file =
+134      ! &doc_dir\variable_info%sysfunc(compress(&ggg_parent,,ka))%sysfunc(compress(&gg_parent,,ka))
+134      ! %sysfunc(compress(&g_parent,,ka))%sysfunc(today(),yymmddn8.).xlsx;
+135            %put DEBUG: Output file = &out_file;
+136        
+137            /**Get variable information**/
+138            ods output variables=allvarout;
+4                                           The SAS System              16:21 Thursday, March 26, 2026
 
-139            proc contents data=INLIB._all_ memtype=data;
-140            run;
-141        
-142            /**Sort data by dataset and variable number**/
-143            proc sort data=allvarout;
-144                by member num;
-145            run;
-146        
-147            /**Create Excel output file with separate sheets per dataset**/
-148            options nobyline;
-149            ods excel file="&out_file"
-150                options(sheet_name="#BYVAL(member)" embedded_titles='yes');
-151        
-152            proc print data=allvarout noobs label;
-153                by member;
-154                pageby member;
-155                title "Variables in #BYVAL(member) Dataset";
-156                label member='Dataset Name'
-157                      num='Variable Number'
-158                      variable='Variable Name'
-159                      type='Type'
-160                      len='Length'
-161                      format='Format'
-162                      informat='Informat'
-163                      label='Variable Label';
-164            run;
-165        
-166            title;
-167        
-168            ods excel close;
-169        
-170            /**Clean up**/
-171            proc datasets library=work nolist nodetails;
-172                delete allvarout;
-173            quit;
-174        
-175            libname INLIB clear;
-176        
-177            %put NOTE: Variable information document created: &out_file;
-178        
-179        %mend variable_info_cli;
-180        
-181        %variable_info_cli;
+139        
+140            proc contents data=INLIB._all_ memtype=data;
+141            run;
+142        
+143            /**Sort data by dataset and variable number**/
+144            proc sort data=allvarout;
+145                by member num;
+146            run;
+147        
+148            /**Create Excel output file with separate sheets per dataset**/
+149            options nobyline;
+150            ods excel file="&out_file"
+151                options(sheet_name="#BYVAL(member)" embedded_titles='yes');
+152        
+153            proc print data=allvarout noobs label;
+154                by member;
+155                pageby member;
+156                title "Variables in #BYVAL(member) Dataset";
+157                label member='Dataset Name'
+158                      num='Variable Number'
+159                      variable='Variable Name'
+160                      type='Type'
+161                      len='Length'
+162                      format='Format'
+163                      informat='Informat'
+164                      label='Variable Label';
+165            run;
+166        
+167            title;
+168        
+169            ods excel close;
+170        
+171            /**Clean up**/
+172            proc datasets library=work nolist nodetails;
+173                delete allvarout;
+174            quit;
+175        
+176            libname INLIB clear;
+177        
+178            %put NOTE: Variable information document created: &out_file;
+179        
+180        %mend variable_info_cli;
+181        
+182        %variable_info_cli;
 DEBUG: Raw SYSPARM value = C:\Users\rooneyz\Documents\TestData\HarmTestData|E:\output
 DEBUG: Pipe position = 49
 DEBUG: Input Directory = C:\Users\rooneyz\Documents\TestData\HarmTestData
@@ -221,16 +222,14 @@ DEBUG: Creating directory E:\output\DAC_Documents
 DEBUG: Successfully created E:\output\DAC_Documents
 NOTE: Libref INLIB was successfully assigned as follows: 
       Engine:        V9 
-      Physical Name: C:\Users\rooneyz\Documents\TestData\HarmTestData
-5                                           The SAS System                16:55 Friday, March 20, 2026
+5                                           The SAS System              16:21 Thursday, March 26, 2026
 
-WARNING: In a call to the COMPRESS function or routine, the modifier "'" not valid.
-WARNING: In a call to the COMPRESS function or routine, the modifier "'" not valid.
-DEBUG: Output file = E:\output\DAC_Documents\variable_info_HarmTestData_20260320.xlsx
+      Physical Name: C:\Users\rooneyz\Documents\TestData\HarmTestData
+DEBUG: Output file = E:\output\DAC_Documents\variable_infoDocumentsTestDataHarmTestData20260326.xlsx
 
 NOTE: PROCEDURE CONTENTS used (Total process time):
-      real time           0.09 seconds
-      cpu time            0.04 seconds
+      real time           0.10 seconds
+      cpu time            0.07 seconds
       
 NOTE: The data set WORK.ALLVAROUT has 900 observations and 9 variables.
 NOTE: The PROCEDURE CONTENTS printed pages 1-70.
@@ -240,18 +239,19 @@ NOTE: There were 900 observations read from the data set WORK.ALLVAROUT.
 NOTE: The data set WORK.ALLVAROUT has 900 observations and 9 variables.
 NOTE: PROCEDURE SORT used (Total process time):
       real time           0.01 seconds
-      cpu time            0.01 seconds
+      cpu time            0.00 seconds
       
 
 
 NOTE: There were 900 observations read from the data set WORK.ALLVAROUT.
 NOTE: The PROCEDURE PRINT printed pages 71-119.
 NOTE: PROCEDURE PRINT used (Total process time):
-      real time           1.79 seconds
-      cpu time            1.73 seconds
+      real time           1.68 seconds
+      cpu time            1.62 seconds
       
 
-NOTE: Writing EXCEL file: E:\output\DAC_Documents\variable_info_HarmTestData_20260320.xlsx
+NOTE: Writing EXCEL file: 
+      E:\output\DAC_Documents\variable_infoDocumentsTestDataHarmTestData20260326.xlsx
 NOTE: Deleting WORK.ALLVAROUT (memtype=DATA).
 NOTE: PROCEDURE DATASETS used (Total process time):
       real time           0.00 seconds
@@ -260,9 +260,9 @@ NOTE: PROCEDURE DATASETS used (Total process time):
 
 NOTE: Libref INLIB has been deassigned.
 NOTE: Variable information document created: 
-E:\output\DAC_Documents\variable_info_HarmTestData_20260320.xlsx
+E:\output\DAC_Documents\variable_infoDocumentsTestDataHarmTestData20260326.xlsx
 NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
 NOTE: The SAS System used:
-      real time           3.05 seconds
-      cpu time            2.59 seconds
+      real time           2.98 seconds
+      cpu time            2.53 seconds
       
