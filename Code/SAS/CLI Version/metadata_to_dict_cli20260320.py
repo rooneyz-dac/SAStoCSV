@@ -27,8 +27,8 @@ Behavior:
       Any column not in the desired set is dropped; any desired column absent from the source
       is added with empty (NaN) values.
     - Concatenates all sheets and writes outputs to:
-        `DAC_Documents/{TRIAL_NAME}_dictionary.csv`
-        `DAC_Documents/{TRIAL_NAME}_dictionary.xlsx`
+        `DAC_Documents/metadata_to_dict_{TRIAL_NAME}_{YYYYMMDD}.csv`
+        `DAC_Documents/metadata_to_dict_{TRIAL_NAME}_{YYYYMMDD}.xlsx`
 
 Exit codes:
     0   Success
@@ -55,6 +55,7 @@ import pandas as pd
 import os
 import sys
 import re
+from datetime import date
 
 
 def normalize_col(s: object) -> str:
@@ -205,8 +206,9 @@ def main():
     print(f"DEBUG: Output normalized to columns: {desired_columns}")
 
     # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
-    csv_output_path = os.path.join(dac_documents_dir, f"{trial_name}_dictionary.csv")
-    excel_output_path = os.path.join(dac_documents_dir, f"{trial_name}_dictionary.xlsx")
+    date_stamp = date.today().strftime('%Y%m%d')
+    csv_output_path = os.path.join(dac_documents_dir, f"metadata_to_dict_{trial_name}_{date_stamp}.csv")
+    excel_output_path = os.path.join(dac_documents_dir, f"metadata_to_dict_{trial_name}_{date_stamp}.xlsx")
 
     try:
         combined_df.to_csv(csv_output_path, index=False)
