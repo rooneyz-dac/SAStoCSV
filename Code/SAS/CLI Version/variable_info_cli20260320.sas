@@ -39,7 +39,7 @@
 | OUTPUT STRUCTURE:
 |   output_directory\
 |   └── DAC_Documents\
-|       └── variable_info_<libname>_<YYYYMMDD>.xlsx
+|       └── variable_info_<GGG_PARENT>_<GG_PARENT>_<G_PARENT>_<YYYYMMDD>.xlsx
 |           (one Excel sheet per dataset)
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
@@ -127,10 +127,14 @@
     %end;
 
     /**Set output file path**/
-    %local out_file libname_text;
-    %let libname_text = %scan(&indir, -1, \);
-    %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
-    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&libname_text,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
+    %local out_file g_parent gg_parent ggg_parent;
+    %let g_parent   = %scan(&indir, -1, \);
+    %let gg_parent  = %scan(&indir, -2, \);
+    %let ggg_parent = %scan(&indir, -3, \);
+    %if %sysevalf(%superq(g_parent)=,boolean)   %then %let g_parent   = INPUT;
+    %if %sysevalf(%superq(gg_parent)=,boolean)  %then %let gg_parent  = UNKNOWN;
+    %if %sysevalf(%superq(ggg_parent)=,boolean) %then %let ggg_parent = UNKNOWN;
+    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**Get variable information**/

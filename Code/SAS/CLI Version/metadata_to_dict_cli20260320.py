@@ -6,12 +6,13 @@ Purpose:
     Build a combined trial dictionary from a metadata summary Excel workbook.
 
 Usage:
-    python metadata_to_dict_cli20260320.py <input_excel> <output_dir> <trial_name>
+    python metadata_to_dict_cli20260320.py <input_excel> <output_dir>
 
 Positional arguments:
     input_excel     Path to the metadata Excel workbook (multiple sheets expected).
     output_dir      Base directory where `DAC_Documents` will be created/used.
-    trial_name      Trial short name (will be uppercased) used for output filenames.
+                    The last three path components are used to build the output
+                    filename as: dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}
 
 Behavior:
     - Reads every sheet in the workbook using header row 3 (zero-based index 2).
@@ -26,9 +27,10 @@ Behavior:
     - Normalizes output to exactly these columns in order: NUM, VARIABLE, TYPE, LEN, POS, LABEL.
       Any column not in the desired set is dropped; any desired column absent from the source
       is added with empty (NaN) values.
+    - Derives GGG_PARENT, GG_PARENT, and G_PARENT from the last three components of output_dir.
     - Concatenates all sheets and writes outputs to:
-        `DAC_Documents/dictionary_{TRIAL_NAME}_{YYYYMMDD}.csv`
-        `DAC_Documents/dictionary_{TRIAL_NAME}_{YYYYMMDD}.xlsx`
+        `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
+        `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
 
 Exit codes:
     0   Success
@@ -49,6 +51,8 @@ ChangeLog:
     2026-01-06  Added normalize_col function to handle carriage returns and extra whitespace in column name mappings.
     2026-03-20  Expanded column rename map with variant names; added final normalization to enforce
                 output columns NUM, VARIABLE, TYPE, LEN, POS, LABEL in that order.
+    2026-03-26  Changed output naming convention to dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD};
+                removed trial_name argument (parent names now derived from output_dir path).
 """
 
 import pandas as pd
@@ -65,20 +69,18 @@ def normalize_col(s: object) -> str:
 
 def main():
     # Step 1: Parse command-line arguments
-    if len(sys.argv) != 4:
+    if len(sys.argv) != 3:
         print("Error: Invalid number of arguments")
-        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir> <trial_name>")
+        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir>")
         print(
-            "Example: python metadata_to_dict_cli20260320.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output` FLINT2")
+            "Example: python metadata_to_dict_cli20260320.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output`")
         sys.exit(1)
 
     file_path = sys.argv[1]
     output_base_dir = sys.argv[2]
-    trial_name = sys.argv[3].upper()
 
     print(f"DEBUG: Input file: {file_path}")
     print(f"DEBUG: Output directory: {output_base_dir}")
-    print(f"DEBUG: Trial name: {trial_name}")
     print(f"DEBUG: Current working directory: {os.getcwd()}")
 
     # Step 2: Validate input file exists
@@ -207,8 +209,21 @@ def main():
 
     # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
     date_stamp = date.today().strftime('%Y%m%d')
-    csv_output_path = os.path.join(dac_documents_dir, f"dictionary_{trial_name}_{date_stamp}.csv")
-    excel_output_path = os.path.join(dac_documents_dir, f"dictionary_{trial_name}_{date_stamp}.xlsx")
+
+    # Derive GGG_PARENT, GG_PARENT, G_PARENT from the last three components of output_base_dir
+    norm_path = output_base_dir.replace('\\', '/')
+    path_parts = [p for p in norm_path.split('/') if p and p != ':' and not p.endswith(':')]
+    g_parent   = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-1].upper()) if len(path_parts) >= 1 else 'UNKNOWN'
+    gg_parent  = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-2].upper()) if len(path_parts) >= 2 else 'UNKNOWN'
+    ggg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-3].upper()) if len(path_parts) >= 3 else 'UNKNOWN'
+    if not g_parent:   g_parent   = 'UNKNOWN'
+    if not gg_parent:  gg_parent  = 'UNKNOWN'
+    if not ggg_parent: ggg_parent = 'UNKNOWN'
+
+    print(f"DEBUG: GGG_PARENT={ggg_parent}, GG_PARENT={gg_parent}, G_PARENT={g_parent}")
+
+    csv_output_path   = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.csv")
+    excel_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.xlsx")
 
     try:
         combined_df.to_csv(csv_output_path, index=False)

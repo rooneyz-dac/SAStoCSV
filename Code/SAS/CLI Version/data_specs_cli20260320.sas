@@ -70,7 +70,7 @@
 | OUTPUT STRUCTURE:
 |   output_directory\
 |   └── DAC_Documents\
-|       └── data_specs_<libname>_<YYYYMMDD>.xlsx
+|       └── data_specs_<GGG_PARENT>_<GG_PARENT>_<G_PARENT>_<YYYYMMDD>.xlsx
 |           (summary sheet + one sheet per dataset)
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
@@ -240,10 +240,15 @@
     %end;
 
     /**Set output file path**/
-    %local out_file libname_text;
+    %local out_file libname_text g_parent gg_parent ggg_parent;
     %let libname_text = %scan(&indir, -1, \);
     %if %sysevalf(%superq(libname_text)=,boolean) %then %let libname_text = INPUT;
-    %let out_file = &doc_dir\data_specs_%sysfunc(compress(&libname_text,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let g_parent   = &libname_text;
+    %let gg_parent  = %scan(&indir, -2, \);
+    %let ggg_parent = %scan(&indir, -3, \);
+    %if %sysevalf(%superq(gg_parent)=,boolean)  %then %let gg_parent  = UNKNOWN;
+    %if %sysevalf(%superq(ggg_parent)=,boolean) %then %let ggg_parent = UNKNOWN;
+    %let out_file = &doc_dir\data_specs_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**See if the listing output is turned on**/

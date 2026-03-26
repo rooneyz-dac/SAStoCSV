@@ -83,10 +83,10 @@
 #   ├── DAC_SDTM/             - Converted SAS datasets (if XPT input detected)
 #   ├── DAC_CSV/              - CSV exports
 #   ├── DAC_Documents/        - All documentation files
-#   │   ├── variable_info_*.xlsx
-#   │   ├── data_specs_*.xlsx
-#   │   ├── library_info_*.xlsx
-#   │   └── dictionary_*.xlsx
+#   │   ├── variable_info_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx
+#   │   ├── data_specs_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx
+#   │   ├── library_info_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx
+#   │   └── dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.{csv,xlsx}
 #   ├── *.log                 - SAS execution logs (only when --log=1)
 #   ├── *.lst                 - SAS listing files (only when --lst=1)
 #   └── pipeline_vars.env     - Environment variables for chaining scripts
@@ -380,9 +380,11 @@ fi
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/library_info.log")"
 
 # Extract variable info file path from log
-LIBNAME=$(basename "$INPUT_DIR" | tr -cd '[:alnum:]')
+GGG_PARENT=$(basename "$(dirname "$(dirname "$INPUT_DIR")")" | tr -cd '[:alnum:]')
+GG_PARENT=$(basename "$(dirname "$INPUT_DIR")" | tr -cd '[:alnum:]')
+G_PARENT=$(basename "$INPUT_DIR" | tr -cd '[:alnum:]')
 DATE_STAMP=$(date +%Y%m%d)
-export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${LIBNAME}_${DATE_STAMP}.xlsx"
+export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${GGG_PARENT}_${GG_PARENT}_${G_PARENT}_${DATE_STAMP}.xlsx"
 
 # Verify file was created
 if [ -f "$VARIABLE_INFO_FILE" ]; then
@@ -415,7 +417,7 @@ fi
 # Execute Python script if command found
 if [ -n "$PYTHON_CMD" ]; then
     echo "      Using Python command: $PYTHON_CMD"
-    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME"
+    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR"
     if [ $? -eq 0 ]; then
         echo "      Complete."
     else
