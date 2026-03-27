@@ -246,6 +246,7 @@ def main():
     path_label = ggg_parent + gg_parent + g_parent
     if not path_label:
         path_label = 'unknown'
+        print(f"WARNING: Could not derive path label from input directory '{input_dir}'; using 'unknown'")
     base_name = f'dictionary_{path_label}_{date_stamp}'
     csv_output_path = os.path.join(dac_documents_dir, f"{base_name}.csv")
     excel_output_path = os.path.join(dac_documents_dir, f"{base_name}.xlsx")

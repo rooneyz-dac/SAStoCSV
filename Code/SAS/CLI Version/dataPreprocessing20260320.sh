@@ -386,13 +386,13 @@ echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/libra
 # the last three backslash-delimited segments of INPUT_DIR.
 # Bash equivalent of SAS compress(...,,ka): tr -cd '[:alnum:]'
 _INPUT_PARTS=$(echo "$INPUT_DIR" | tr '\\' '/' | tr '/' '\n' | grep -v '^$')
-_G=$(echo "$_INPUT_PARTS" | tail -1 | tr -cd '[:alnum:]')
-_GG=$(echo "$_INPUT_PARTS" | tail -2 | head -1 | tr -cd '[:alnum:]')
-_GGG=$(echo "$_INPUT_PARTS" | tail -3 | head -1 | tr -cd '[:alnum:]')
-# Handle short paths: if the path has fewer segments, avoid duplicating them
 _N_PARTS=$(echo "$_INPUT_PARTS" | wc -l)
-if [ "$_N_PARTS" -lt 3 ]; then _GGG=""; fi
-if [ "$_N_PARTS" -lt 2 ]; then _GG=""; fi
+# Only extract as many segments as the path actually contains to avoid
+# duplicating values when there are fewer than three segments.
+_G="";  _GG="";  _GGG=""
+if [ "$_N_PARTS" -ge 1 ]; then _G=$(echo "$_INPUT_PARTS" | tail -1 | tr -cd '[:alnum:]'); fi
+if [ "$_N_PARTS" -ge 2 ]; then _GG=$(echo "$_INPUT_PARTS" | tail -2 | head -1 | tr -cd '[:alnum:]'); fi
+if [ "$_N_PARTS" -ge 3 ]; then _GGG=$(echo "$_INPUT_PARTS" | tail -3 | head -1 | tr -cd '[:alnum:]'); fi
 _PATH_LABEL="${_GGG}${_GG}${_G}"
 DATE_STAMP=$(date +%Y%m%d)
 export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${_PATH_LABEL}_${DATE_STAMP}.xlsx"
