@@ -27,11 +27,14 @@ Behavior:
       Any column not in the desired set is dropped; any desired column absent from the source
       is added with empty (NaN) values.
     - Concatenates all sheets and writes two output files to DAC_Documents:
-        `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
-        `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
-    where GGG_PARENT, GG_PARENT, and G_PARENT are the third-to-last, second-to-last,
-    and last segments of the output directory path (alphanumeric characters only,
-    matching the SAS compress(...,,ka) convention — e.g. "C:" becomes "C").
+        `DAC_Documents/dictionary_{PARTS}_{YYYYMMDD}.csv`
+        `DAC_Documents/dictionary_{PARTS}_{YYYYMMDD}.xlsx`
+    where PARTS is a underscore-joined list of the last three non-empty segments of
+    the output directory path (alphanumeric characters only, matching the SAS
+    compress(...,,ka) convention — e.g. "C:" becomes "C").  Empty segments are
+    omitted so paths with fewer than three components never produce consecutive
+    underscores (e.g. "E:\output" yields "dictionary_E_output_{YYYYMMDD}", not
+    "dictionary__E_output_{YYYYMMDD}").
 
 Exit codes:
     0   Success
@@ -55,6 +58,9 @@ ChangeLog:
     2026-03-27  Sanitize path-part components with re.sub([^a-zA-Z0-9]) so Windows drive letters
                 (e.g. "C:") do not embed invalid characters in output filenames; outputs both
                 dictionary_*.csv and dictionary_*.xlsx to DAC_Documents.
+    2026-03-27  Filter out empty path-part components before joining so that short output
+                paths (e.g. "E:\output", which only yields two non-empty segments) no longer
+                produce consecutive underscores in the output filename.
 """
 
 import pandas as pd
@@ -216,12 +222,16 @@ def main():
     # Derive parent directory components from the output base directory.
     # Keep only alphanumeric characters in each part to ensure valid filenames on all
     # platforms (e.g. the Windows drive letter "C:" becomes "C", matching SAS compress(...,,ka)).
+    # Then filter out any parts that become empty after sanitization so that paths with
+    # fewer than three components (e.g. "E:\output") do not produce consecutive underscores.
     path_parts = [p for p in output_base_dir.replace('\\', '/').split('/') if p]
     g_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-1]) if len(path_parts) >= 1 else ''
     gg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-2]) if len(path_parts) >= 2 else ''
     ggg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-3]) if len(path_parts) >= 3 else ''
-    csv_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.csv")
-    excel_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.xlsx")
+    name_parts = [p for p in [ggg_parent, gg_parent, g_parent] if p]
+    base_name = 'dictionary_' + '_'.join(name_parts) + f'_{date_stamp}'
+    csv_output_path = os.path.join(dac_documents_dir, f"{base_name}.csv")
+    excel_output_path = os.path.join(dac_documents_dir, f"{base_name}.xlsx")
 
     try:
         combined_df.to_csv(csv_output_path, index=False)
