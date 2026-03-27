@@ -381,9 +381,21 @@ fi
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/library_info.log")"
 
 # Extract variable info file path from log
-LIBNAME=$(basename "$INPUT_DIR" | tr -cd '[:alnum:]')
+# Build the same camelCase path label the SAS script uses: compress(ggg,,ka)
+# concatenated with compress(gg,,ka) and compress(g,,ka), where g/gg/ggg are
+# the last three backslash-delimited segments of INPUT_DIR.
+# Bash equivalent of SAS compress(...,,ka): tr -cd '[:alnum:]'
+_INPUT_PARTS=$(echo "$INPUT_DIR" | tr '\\' '/' | tr '/' '\n' | grep -v '^$')
+_N_PARTS=$(echo "$_INPUT_PARTS" | wc -l)
+# Only extract as many segments as the path actually contains to avoid
+# duplicating values when there are fewer than three segments.
+_G="";  _GG="";  _GGG=""
+if [ "$_N_PARTS" -ge 1 ]; then _G=$(echo "$_INPUT_PARTS" | tail -1 | tr -cd '[:alnum:]'); fi
+if [ "$_N_PARTS" -ge 2 ]; then _GG=$(echo "$_INPUT_PARTS" | tail -2 | head -1 | tr -cd '[:alnum:]'); fi
+if [ "$_N_PARTS" -ge 3 ]; then _GGG=$(echo "$_INPUT_PARTS" | tail -3 | head -1 | tr -cd '[:alnum:]'); fi
+_PATH_LABEL="${_GGG}${_GG}${_G}"
 DATE_STAMP=$(date +%Y%m%d)
-export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${LIBNAME}_${DATE_STAMP}.xlsx"
+export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${_PATH_LABEL}_${DATE_STAMP}.xlsx"
 
 # Verify file was created
 if [ -f "$VARIABLE_INFO_FILE" ]; then
@@ -416,7 +428,7 @@ fi
 # Execute Python script if command found
 if [ -n "$PYTHON_CMD" ]; then
     echo "      Using Python command: $PYTHON_CMD"
-    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME"
+    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME" "$INPUT_DIR"
     if [ $? -eq 0 ]; then
         echo "      Complete."
     else

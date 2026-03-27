@@ -37,7 +37,7 @@
 | OUTPUT STRUCTURE:
 |   output_directory\
 |   └── DAC_Documents\
-|       └── library_info_<GGG_PARENT>_<GG_PARENT>_<G_PARENT>_<YYYYMMDD>.xlsx
+|       └── library_info_<GGG_PARENT><GG_PARENT><G_PARENT>_<YYYYMMDD>.xlsx
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
 | SAS v9.4 or Higher: Yes
@@ -128,7 +128,7 @@
     %let g_parent = %scan(&indir, -1, \);
     %let gg_parent = %scan(&indir, -2, \);
     %let ggg_parent = %scan(&indir, -3, \);
-    %let out_file = &doc_dir\library_info_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\library_info_%sysfunc(compress(&ggg_parent,,ka))%sysfunc(compress(&gg_parent,,ka))%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**Create table of SQL library data**/
