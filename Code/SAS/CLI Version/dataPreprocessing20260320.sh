@@ -86,6 +86,7 @@
 #   │   ├── variable_info_*.xlsx
 #   │   ├── data_specs_*.xlsx
 #   │   ├── library_info_*.xlsx
+#   │   ├── dictionary_*.csv
 #   │   └── dictionary_*.xlsx
 #   ├── *.log                 - SAS execution logs (only when --log=1)
 #   ├── *.lst                 - SAS listing files (only when --lst=1)
