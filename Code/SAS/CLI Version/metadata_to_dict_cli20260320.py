@@ -27,8 +27,8 @@ Behavior:
       Any column not in the desired set is dropped; any desired column absent from the source
       is added with empty (NaN) values.
     - Concatenates all sheets and writes outputs to:
-        `DAC_Documents/dictionary{GGG_PARENT}{GG_PARENT}{G_PARENT}{YYYYMMDD}.csv`
-        `DAC_Documents/dictionary{GGG_PARENT}{GG_PARENT}{G_PARENT}{YYYYMMDD}.xlsx`
+        `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
+        `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
     where GGG_PARENT, GG_PARENT, and G_PARENT are the third-to-last, second-to-last,
     and last segments of the output directory path, respectively.
 
@@ -214,8 +214,8 @@ def main():
     g_parent = path_parts[-1] if len(path_parts) >= 1 else ''
     gg_parent = path_parts[-2] if len(path_parts) >= 2 else ''
     ggg_parent = path_parts[-3] if len(path_parts) >= 3 else ''
-    csv_output_path = os.path.join(dac_documents_dir, f"dictionary{ggg_parent}{gg_parent}{g_parent}{date_stamp}.csv")
-    excel_output_path = os.path.join(dac_documents_dir, f"dictionary{ggg_parent}{gg_parent}{g_parent}{date_stamp}.xlsx")
+    csv_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.csv")
+    excel_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.xlsx")
 
     try:
         combined_df.to_csv(csv_output_path, index=False)

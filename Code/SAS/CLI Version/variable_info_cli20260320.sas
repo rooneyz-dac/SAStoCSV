@@ -39,7 +39,7 @@
 | OUTPUT STRUCTURE:
 |   output_directory\
 |   └── DAC_Documents\
-|       └── variable_info<GGG_PARENT><GG_PARENT><G_PARENT><YYYYMMDD>.xlsx
+|       └── variable_info_<GGG_PARENT>_<GG_PARENT>_<G_PARENT>_<YYYYMMDD>.xlsx
 |           (one Excel sheet per dataset)
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
@@ -131,7 +131,7 @@
     %let g_parent = %scan(&indir, -1, \);
     %let gg_parent = %scan(&indir, -2, \);
     %let ggg_parent = %scan(&indir, -3, \);
-    %let out_file = &doc_dir\variable_info%sysfunc(compress(&ggg_parent,,ka))%sysfunc(compress(&gg_parent,,ka))%sysfunc(compress(&g_parent,,ka))%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**Get variable information**/
