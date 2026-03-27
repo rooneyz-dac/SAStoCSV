@@ -6,12 +6,17 @@ Purpose:
     Build a combined trial dictionary from a metadata summary Excel workbook.
 
 Usage:
-    python metadata_to_dict_cli20260320.py <input_excel> <output_dir> <trial_name>
+    python metadata_to_dict_cli20260320.py <input_excel> <output_dir> <trial_name> [<input_dir>]
 
 Positional arguments:
     input_excel     Path to the metadata Excel workbook (multiple sheets expected).
     output_dir      Base directory where `DAC_Documents` will be created/used.
     trial_name      Trial short name (will be uppercased) used for output filenames.
+    input_dir       (Optional) Path to the input data directory.  When supplied
+                    the last three path segments of this directory are used to
+                    build the output filename — matching the convention used by
+                    the SAS pipeline scripts.  When omitted the input_excel
+                    directory is used instead.
 
 Behavior:
     - Reads every sheet in the workbook using header row 3 (zero-based index 2).
@@ -27,14 +32,15 @@ Behavior:
       Any column not in the desired set is dropped; any desired column absent from the source
       is added with empty (NaN) values.
     - Concatenates all sheets and writes two output files to DAC_Documents:
-        `DAC_Documents/dictionary_{PARTS}_{YYYYMMDD}.csv`
-        `DAC_Documents/dictionary_{PARTS}_{YYYYMMDD}.xlsx`
-    where PARTS is a underscore-joined list of the last three non-empty segments of
-    the output directory path (alphanumeric characters only, matching the SAS
-    compress(...,,ka) convention — e.g. "C:" becomes "C").  Empty segments are
-    omitted so paths with fewer than three components never produce consecutive
-    underscores (e.g. "E:\output" yields "dictionary_E_output_{YYYYMMDD}", not
-    "dictionary__E_output_{YYYYMMDD}").
+        `DAC_Documents/dictionary_<GGG><GG><G>_<YYYYMMDD>.csv`
+        `DAC_Documents/dictionary_<GGG><GG><G>_<YYYYMMDD>.xlsx`
+    where GGG, GG, and G are the third-to-last, second-to-last, and last
+    segments of the input directory path (alphanumeric characters only,
+    matching the SAS compress(...,,ka) convention).  The segments are
+    concatenated directly (camelCase style) without separating underscores,
+    matching the naming convention used by the SAS pipeline scripts.
+    If the path has fewer than three segments, only the available segments
+    are used so the program never crashes on short paths.
 
 Exit codes:
     0   Success
@@ -58,9 +64,10 @@ ChangeLog:
     2026-03-27  Sanitize path-part components with re.sub([^a-zA-Z0-9]) so Windows drive letters
                 (e.g. "C:") do not embed invalid characters in output filenames; outputs both
                 dictionary_*.csv and dictionary_*.xlsx to DAC_Documents.
-    2026-03-27  Filter out empty path-part components before joining so that short output
-                paths (e.g. "E:\output", which only yields two non-empty segments) no longer
-                produce consecutive underscores in the output filename.
+    2026-03-27  Switch to INPUT directory path for filename derivation (matching SAS convention).
+                Use camelCase concatenation of path segments (no underscores between them).
+                Accept optional 4th argument <input_dir>; fall back to the input file directory.
+                Add safety check so short paths never crash the program.
 """
 
 import pandas as pd
@@ -77,20 +84,25 @@ def normalize_col(s: object) -> str:
 
 def main():
     # Step 1: Parse command-line arguments
-    if len(sys.argv) != 4:
+    if len(sys.argv) < 4 or len(sys.argv) > 5:
         print("Error: Invalid number of arguments")
-        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir> <trial_name>")
+        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir> <trial_name> [<input_dir>]")
         print(
-            "Example: python metadata_to_dict_cli20260320.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output` FLINT2")
+            "Example: python metadata_to_dict_cli20260320.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output` FLINT2 `C:\\data\\input`")
         sys.exit(1)
 
     file_path = sys.argv[1]
     output_base_dir = sys.argv[2]
     trial_name = sys.argv[3].upper()
+    # Optional 4th argument: the input data directory whose path segments are
+    # used to build the output filename.  When omitted, fall back to the
+    # directory containing the input Excel file.
+    input_dir = sys.argv[4] if len(sys.argv) == 5 else os.path.dirname(os.path.abspath(file_path))
 
     print(f"DEBUG: Input file: {file_path}")
     print(f"DEBUG: Output directory: {output_base_dir}")
     print(f"DEBUG: Trial name: {trial_name}")
+    print(f"DEBUG: Input directory (for naming): {input_dir}")
     print(f"DEBUG: Current working directory: {os.getcwd()}")
 
     # Step 2: Validate input file exists
@@ -219,17 +231,22 @@ def main():
 
     # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
     date_stamp = date.today().strftime('%Y%m%d')
-    # Derive parent directory components from the output base directory.
-    # Keep only alphanumeric characters in each part to ensure valid filenames on all
-    # platforms (e.g. the Windows drive letter "C:" becomes "C", matching SAS compress(...,,ka)).
-    # Then filter out any parts that become empty after sanitization so that paths with
-    # fewer than three components (e.g. "E:\output") do not produce consecutive underscores.
-    path_parts = [p for p in output_base_dir.replace('\\', '/').split('/') if p]
+    # Derive parent directory components from the INPUT directory path (matching
+    # the SAS convention where &indir is scanned with %scan(&indir,-1,\) etc.).
+    # Keep only alphanumeric characters in each part (equivalent to SAS
+    # compress(...,,ka)).  Concatenate the parts directly (camelCase) without
+    # separating underscores, matching the SAS naming convention.
+    # Safety check: if the path has fewer segments than expected, only the
+    # available segments are used — the program never crashes on short paths.
+    path_parts = [p for p in input_dir.replace('\\', '/').split('/') if p]
     g_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-1]) if len(path_parts) >= 1 else ''
     gg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-2]) if len(path_parts) >= 2 else ''
     ggg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-3]) if len(path_parts) >= 3 else ''
-    name_parts = [p for p in [ggg_parent, gg_parent, g_parent] if p]
-    base_name = 'dictionary_' + '_'.join(name_parts) + f'_{date_stamp}'
+    # CamelCase: concatenate path parts directly (no underscores between them)
+    path_label = ggg_parent + gg_parent + g_parent
+    if not path_label:
+        path_label = 'unknown'
+    base_name = f'dictionary_{path_label}_{date_stamp}'
     csv_output_path = os.path.join(dac_documents_dir, f"{base_name}.csv")
     excel_output_path = os.path.join(dac_documents_dir, f"{base_name}.xlsx")
 
