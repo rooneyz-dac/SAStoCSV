@@ -26,11 +26,12 @@ Behavior:
     - Normalizes output to exactly these columns in order: NUM, VARIABLE, TYPE, LEN, POS, LABEL.
       Any column not in the desired set is dropped; any desired column absent from the source
       is added with empty (NaN) values.
-    - Concatenates all sheets and writes outputs to:
+    - Concatenates all sheets and writes two output files to DAC_Documents:
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
     where GGG_PARENT, GG_PARENT, and G_PARENT are the third-to-last, second-to-last,
-    and last segments of the output directory path, respectively.
+    and last segments of the output directory path (alphanumeric characters only,
+    matching the SAS compress(...,,ka) convention — e.g. "C:" becomes "C").
 
 Exit codes:
     0   Success
@@ -51,6 +52,9 @@ ChangeLog:
     2026-01-06  Added normalize_col function to handle carriage returns and extra whitespace in column name mappings.
     2026-03-20  Expanded column rename map with variant names; added final normalization to enforce
                 output columns NUM, VARIABLE, TYPE, LEN, POS, LABEL in that order.
+    2026-03-27  Sanitize path-part components with re.sub([^a-zA-Z0-9]) so Windows drive letters
+                (e.g. "C:") do not embed invalid characters in output filenames; outputs both
+                dictionary_*.csv and dictionary_*.xlsx to DAC_Documents.
 """
 
 import pandas as pd
@@ -209,11 +213,13 @@ def main():
 
     # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
     date_stamp = date.today().strftime('%Y%m%d')
-    # Derive parent directory components from the output base directory
+    # Derive parent directory components from the output base directory.
+    # Keep only alphanumeric characters in each part to ensure valid filenames on all
+    # platforms (e.g. the Windows drive letter "C:" becomes "C", matching SAS compress(...,,ka)).
     path_parts = [p for p in output_base_dir.replace('\\', '/').split('/') if p]
-    g_parent = path_parts[-1] if len(path_parts) >= 1 else ''
-    gg_parent = path_parts[-2] if len(path_parts) >= 2 else ''
-    ggg_parent = path_parts[-3] if len(path_parts) >= 3 else ''
+    g_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-1]) if len(path_parts) >= 1 else ''
+    gg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-2]) if len(path_parts) >= 2 else ''
+    ggg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-3]) if len(path_parts) >= 3 else ''
     csv_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.csv")
     excel_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.xlsx")
 
