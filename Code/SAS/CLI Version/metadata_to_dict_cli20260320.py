@@ -6,12 +6,15 @@ Purpose:
     Build a combined trial dictionary from a metadata summary Excel workbook.
 
 Usage:
-    python metadata_to_dict_cli20260320.py <input_excel> <output_dir> <trial_name>
+    python metadata_to_dict_cli20260320.py <input_excel> <output_dir> <trial_name> [input_dir]
 
 Positional arguments:
     input_excel     Path to the metadata Excel workbook (multiple sheets expected).
     output_dir      Base directory where `DAC_Documents` will be created/used.
     trial_name      Trial short name (will be uppercased) used for output filenames.
+    input_dir       (Optional) Path to the input data directory; used to derive the
+                    GGG/GG/G filename components matching the SAS naming convention.
+                    If omitted, output_dir is used as a fallback.
 
 Behavior:
     - Reads every sheet in the workbook using header row 3 (zero-based index 2).
@@ -30,8 +33,9 @@ Behavior:
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
     where GGG_PARENT, GG_PARENT, and G_PARENT are the third-to-last, second-to-last,
-    and last segments of the output directory path (alphanumeric characters only,
+    and last segments of the input directory path (alphanumeric characters only,
     matching the SAS compress(...,,ka) convention — e.g. "C:" becomes "C").
+    This matches the naming convention used by variable_info_cli20260320.sas.
 
 Exit codes:
     0   Success
@@ -55,6 +59,8 @@ ChangeLog:
     2026-03-27  Sanitize path-part components with re.sub([^a-zA-Z0-9]) so Windows drive letters
                 (e.g. "C:") do not embed invalid characters in output filenames; outputs both
                 dictionary_*.csv and dictionary_*.xlsx to DAC_Documents.
+    2026-03-27  Accept optional input_dir argument; derive GGG/GG/G filename components from
+                input_dir (matching SAS variable_info naming convention) instead of output_dir.
 """
 
 import pandas as pd
@@ -71,20 +77,22 @@ def normalize_col(s: object) -> str:
 
 def main():
     # Step 1: Parse command-line arguments
-    if len(sys.argv) != 4:
+    if len(sys.argv) < 4 or len(sys.argv) > 5:
         print("Error: Invalid number of arguments")
-        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir> <trial_name>")
+        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir> <trial_name> [input_dir]")
         print(
-            "Example: python metadata_to_dict_cli20260320.py `C:\\data\\meta_data_summary.xlsx` `C:\\data\\output` FLINT2")
+            "Example: python metadata_to_dict_cli20260320.py C:\\data\\meta_data_summary.xlsx C:\\data\\output FLINT2 C:\\data\\input")
         sys.exit(1)
 
     file_path = sys.argv[1]
     output_base_dir = sys.argv[2]
     trial_name = sys.argv[3].upper()
+    input_dir = sys.argv[4] if len(sys.argv) == 5 else None
 
     print(f"DEBUG: Input file: {file_path}")
     print(f"DEBUG: Output directory: {output_base_dir}")
     print(f"DEBUG: Trial name: {trial_name}")
+    print(f"DEBUG: Input directory: {input_dir}")
     print(f"DEBUG: Current working directory: {os.getcwd()}")
 
     # Step 2: Validate input file exists
@@ -213,10 +221,13 @@ def main():
 
     # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
     date_stamp = date.today().strftime('%Y%m%d')
-    # Derive parent directory components from the output base directory.
+    # Derive parent directory components from the input directory (if provided) or fall
+    # back to the output base directory.  Using the input directory matches the SAS
+    # variable_info naming convention: variable_info_GGG_GG_G_DATE.xlsx.
     # Keep only alphanumeric characters in each part to ensure valid filenames on all
     # platforms (e.g. the Windows drive letter "C:" becomes "C", matching SAS compress(...,,ka)).
-    path_parts = [p for p in output_base_dir.replace('\\', '/').split('/') if p]
+    naming_dir = input_dir if input_dir is not None else output_base_dir
+    path_parts = [p for p in naming_dir.replace('\\', '/').split('/') if p]
     g_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-1]) if len(path_parts) >= 1 else ''
     gg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-2]) if len(path_parts) >= 2 else ''
     ggg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-3]) if len(path_parts) >= 3 else ''
