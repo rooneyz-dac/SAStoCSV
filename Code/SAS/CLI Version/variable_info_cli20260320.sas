@@ -13,14 +13,21 @@
 |   - Added path validation for input and output directories
 |   - Output file name includes library name and date stamp
 |   - Each dataset is placed on its own sheet in the Excel workbook
+| 2026-03-28: Column formatting update
+|   - Dropped FORMAT and INFORMAT columns from output to match the
+|     column selection logic in metadata_to_dict_cli20260320.py
+|   - Enforced column order: NUM, VARIABLE, TYPE, LEN, LABEL
+|   - Switched from PROC PRINT to PROC REPORT to enable per-column
+|     width formatting in the Excel workbook output
 *------------------------------------------------------------------*
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
 | designated directory. For each dataset the report lists variable
-| number, name, type, length, format, informat, and label. Results
-| are exported to a multi-sheet Excel workbook (.xlsx) in the
-| DAC_Documents subfolder of the output directory, with one sheet
-| per dataset.
+| number, name, type, length, and label. Results are exported to a
+| multi-sheet Excel workbook (.xlsx) in the DAC_Documents subfolder
+| of the output directory, with one sheet per dataset.
+| Column selection and ordering mirrors the logic in
+| metadata_to_dict_cli20260320.py (NUM, VARIABLE, TYPE, LEN, LABEL).
 |
 | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to the folder containing SAS datasets
@@ -146,22 +153,30 @@
     run;
 
     /**Create Excel output file with separate sheets per dataset**/
+    /**Column selection and ordering mirrors metadata_to_dict_cli20260320.py:**/
+    /**  desired_columns = [NUM, VARIABLE, TYPE, LEN, LABEL]                 **/
+    /**  FORMAT and INFORMAT are excluded to match Python output logic.       **/
     options nobyline;
     ods excel file="&out_file"
         options(sheet_name="#BYVAL(member)" embedded_titles='yes');
 
-    proc print data=allvarout noobs label;
+    proc report data=allvarout nowindows headline;
+        columns num variable type len label;
+        define num      / display 'Variable Number'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=0.9in just=center];
+        define variable / display 'Variable Name'
+                          style(column)=[cellwidth=1.5in];
+        define type     / display 'Type'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=0.75in just=center];
+        define len      / display 'Length'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=0.75in just=center];
+        define label    / display 'Variable Label'
+                          style(column)=[cellwidth=3in];
         by member;
-        pageby member;
         title "Variables in #BYVAL(member) Dataset";
-        label member='Dataset Name'
-              num='Variable Number'
-              variable='Variable Name'
-              type='Type'
-              len='Length'
-              format='Format'
-              informat='Informat'
-              label='Variable Label';
     run;
 
     title;
