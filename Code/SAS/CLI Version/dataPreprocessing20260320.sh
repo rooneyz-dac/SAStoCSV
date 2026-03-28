@@ -416,7 +416,7 @@ fi
 # Execute Python script if command found
 if [ -n "$PYTHON_CMD" ]; then
     echo "      Using Python command: $PYTHON_CMD"
-    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME"
+    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME" "$INPUT_DIR"
     if [ $? -eq 0 ]; then
         echo "      Complete."
     else
