@@ -20,6 +20,11 @@
 |   - Switched from PROC PRINT to PROC REPORT to enable per-column
 |     width formatting in the Excel workbook output
 |   - Centered alignment on all columns (header and data cells)
+|   - Added variant column-name renaming (mirrors col_rename_map in
+|     metadata_to_dict_cli20260320.py): variant column names such as
+|     LENGTH, VARIABLE_NAME, VAR_NUM, etc. are normalized to the
+|     standard desired names (NUM, VARIABLE, TYPE, LEN, LABEL) before
+|     any columns are dropped, with DEBUG/NOTE logging for renames
 |   - Added dynamic column-drop logic: any column not in the desired
 |     list is removed from the dataset before output, with DEBUG
 |     notification printed to the console and a highlighted NOTE
@@ -156,6 +161,84 @@
     proc sort data=allvarout;
         by member num;
     run;
+
+    /**Rename variant column names to standard desired names**/
+    /**Mirrors the col_rename_map in metadata_to_dict_cli20260320.py.        **/
+    /**If a variant column name is found AND the target standard name does    **/
+    /**not already exist, the column is renamed to the standard name.        **/
+    %local rename_pairs renamed_log;
+    %let rename_pairs = ;
+    %let renamed_log = ;
+
+    data _col_map_;
+        length variant $32 standard $32;
+        /* NUM variants */
+        variant='VARIABLE_NUMBER'; standard='NUM'; output;
+        variant='VAR_NUM';         standard='NUM'; output;
+        variant='VAR_NO';          standard='NUM'; output;
+        variant='NUMBER';          standard='NUM'; output;
+        variant='NO';              standard='NUM'; output;
+        /* VARIABLE variants */
+        variant='VARIABLE_NAME';   standard='VARIABLE'; output;
+        variant='VAR_NAME';        standard='VARIABLE'; output;
+        variant='NAME';            standard='VARIABLE'; output;
+        /* TYPE variants */
+        variant='VAR_TYPE';        standard='TYPE'; output;
+        variant='DATA_TYPE';       standard='TYPE'; output;
+        variant='VARIABLE_TYPE';   standard='TYPE'; output;
+        /* LEN variants */
+        variant='LENGTH';          standard='LEN'; output;
+        variant='SIZE';            standard='LEN'; output;
+        /* LABEL variants */
+        variant='VARIABLE_LABEL';  standard='LABEL'; output;
+        variant='VAR_LABEL';       standard='LABEL'; output;
+        variant='DESCRIPTION';     standard='LABEL'; output;
+        variant='DESC';            standard='LABEL'; output;
+    run;
+
+    proc sql noprint;
+        /* Build rename pairs: only rename if variant exists and target does not */
+        select cats(a.variant, '=', a.standard)
+            into :rename_pairs separated by ' '
+        from _col_map_ a
+        inner join dictionary.columns b
+            on upcase(b.name) = upcase(a.variant)
+            and b.libname = 'WORK' and b.memname = 'ALLVAROUT'
+        where upcase(a.standard) not in (
+            select upcase(name) from dictionary.columns
+            where libname = 'WORK' and memname = 'ALLVAROUT'
+        );
+
+        /* Build human-readable log of renames */
+        select catx(' -> ', a.variant, a.standard)
+            into :renamed_log separated by ', '
+        from _col_map_ a
+        inner join dictionary.columns b
+            on upcase(b.name) = upcase(a.variant)
+            and b.libname = 'WORK' and b.memname = 'ALLVAROUT'
+        where upcase(a.standard) not in (
+            select upcase(name) from dictionary.columns
+            where libname = 'WORK' and memname = 'ALLVAROUT'
+        );
+    quit;
+
+    %if %length(&rename_pairs) > 0 %then %do;
+        proc datasets library=work nolist nodetails;
+            modify allvarout;
+            rename &rename_pairs;
+        quit;
+        %put DEBUG: Renamed variant columns to standard names: &renamed_log;
+        %put NOTE: ************************************************************;
+        %put NOTE: *** Columns renamed to standard names: &renamed_log ***;
+        %put NOTE: ************************************************************;
+    %end;
+    %else %do;
+        %put DEBUG: No variant column names found - all columns already use standard names;
+    %end;
+
+    proc datasets library=work nolist nodetails;
+        delete _col_map_;
+    quit;
 
     /**Identify and drop columns not in the desired list**/
     /**Desired output columns: NUM, VARIABLE, TYPE, LEN, LABEL            **/
