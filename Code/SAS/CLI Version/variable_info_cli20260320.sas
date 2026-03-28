@@ -13,14 +13,31 @@
 |   - Added path validation for input and output directories
 |   - Output file name includes library name and date stamp
 |   - Each dataset is placed on its own sheet in the Excel workbook
+| 2026-03-28: Column formatting update
+|   - Dropped FORMAT and INFORMAT columns from output to match the
+|     column selection logic in metadata_to_dict_cli20260320.py
+|   - Enforced column order: NUM, VARIABLE, TYPE, LEN, LABEL
+|   - Switched from PROC PRINT to PROC REPORT to enable per-column
+|     width formatting in the Excel workbook output
+|   - Centered alignment on all columns (header and data cells)
+|   - Added variant column-name renaming (mirrors col_rename_map in
+|     metadata_to_dict_cli20260320.py): variant column names such as
+|     LENGTH, VARIABLE_NAME, VAR_NUM, etc. are normalized to the
+|     standard desired names (NUM, VARIABLE, TYPE, LEN, LABEL) before
+|     any columns are dropped, with DEBUG/NOTE logging for renames
+|   - Added dynamic column-drop logic: any column not in the desired
+|     list is removed from the dataset before output, with DEBUG
+|     notification printed to the console and a highlighted NOTE
+|     written to the SAS log
 *------------------------------------------------------------------*
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
 | designated directory. For each dataset the report lists variable
-| number, name, type, length, format, informat, and label. Results
-| are exported to a multi-sheet Excel workbook (.xlsx) in the
-| DAC_Documents subfolder of the output directory, with one sheet
-| per dataset.
+| number, name, type, length, and label. Results are exported to a
+| multi-sheet Excel workbook (.xlsx) in the DAC_Documents subfolder
+| of the output directory, with one sheet per dataset.
+| Column selection and ordering mirrors the logic in
+| metadata_to_dict_cli20260320.py (NUM, VARIABLE, TYPE, LEN, LABEL).
 |
 | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to the folder containing SAS datasets
@@ -145,23 +162,144 @@
         by member num;
     run;
 
+    /**Rename variant column names to standard desired names**/
+    /**Mirrors the col_rename_map in metadata_to_dict_cli20260320.py.        **/
+    /**If a variant column name is found AND the target standard name does    **/
+    /**not already exist, the column is renamed to the standard name.        **/
+    %local rename_pairs renamed_log;
+    %let rename_pairs = ;
+    %let renamed_log = ;
+
+    data _col_map_;
+        length variant $32 standard $32;
+        /* NUM variants */
+        variant='VARIABLE_NUMBER'; standard='NUM'; output;
+        variant='VAR_NUM';         standard='NUM'; output;
+        variant='VAR_NO';          standard='NUM'; output;
+        variant='NUMBER';          standard='NUM'; output;
+        variant='NO';              standard='NUM'; output;
+        /* VARIABLE variants */
+        variant='VARIABLE_NAME';   standard='VARIABLE'; output;
+        variant='VAR_NAME';        standard='VARIABLE'; output;
+        variant='NAME';            standard='VARIABLE'; output;
+        /* TYPE variants */
+        variant='VAR_TYPE';        standard='TYPE'; output;
+        variant='DATA_TYPE';       standard='TYPE'; output;
+        variant='VARIABLE_TYPE';   standard='TYPE'; output;
+        /* LEN variants */
+        variant='LENGTH';          standard='LEN'; output;
+        variant='SIZE';            standard='LEN'; output;
+        /* LABEL variants */
+        variant='VARIABLE_LABEL';  standard='LABEL'; output;
+        variant='VAR_LABEL';       standard='LABEL'; output;
+        variant='DESCRIPTION';     standard='LABEL'; output;
+        variant='DESC';            standard='LABEL'; output;
+    run;
+
+    proc sql noprint;
+        /* Build rename pairs: only rename if variant exists and target does not */
+        select cats(a.variant, '=', a.standard)
+            into :rename_pairs separated by ' '
+        from _col_map_ a
+        inner join dictionary.columns b
+            on upcase(b.name) = upcase(a.variant)
+            and b.libname = 'WORK' and b.memname = 'ALLVAROUT'
+        where upcase(a.standard) not in (
+            select upcase(name) from dictionary.columns
+            where libname = 'WORK' and memname = 'ALLVAROUT'
+        );
+
+        /* Build human-readable log of renames */
+        select catx(' -> ', a.variant, a.standard)
+            into :renamed_log separated by ', '
+        from _col_map_ a
+        inner join dictionary.columns b
+            on upcase(b.name) = upcase(a.variant)
+            and b.libname = 'WORK' and b.memname = 'ALLVAROUT'
+        where upcase(a.standard) not in (
+            select upcase(name) from dictionary.columns
+            where libname = 'WORK' and memname = 'ALLVAROUT'
+        );
+    quit;
+
+    %if %length(&rename_pairs) > 0 %then %do;
+        proc datasets library=work nolist nodetails;
+            modify allvarout;
+            rename &rename_pairs;
+        quit;
+        %put DEBUG: Renamed variant columns to standard names: &renamed_log;
+        %put NOTE: ************************************************************;
+        %put NOTE: *** Columns renamed to standard names: &renamed_log ***;
+        %put NOTE: ************************************************************;
+    %end;
+    %else %do;
+        %put DEBUG: No variant column names found - all columns already use standard names;
+    %end;
+
+    proc datasets library=work nolist nodetails;
+        delete _col_map_;
+    quit;
+
+    /**Identify and drop columns not in the desired list**/
+    /**Desired output columns: NUM, VARIABLE, TYPE, LEN, LABEL            **/
+    /**MEMBER is retained for BY-group processing but excluded from output.**/
+    /**This mirrors the column-drop logic in metadata_to_dict_cli20260320.py**/
+    %local drop_cols;
+    proc contents data=allvarout out=_colinfo_(keep=name) noprint;
+    run;
+
+    proc sql noprint;
+        select upcase(name) into :drop_cols separated by ' '
+        from _colinfo_
+        where upcase(name) not in ('NUM', 'VARIABLE', 'TYPE', 'LEN', 'LABEL', 'MEMBER');
+    quit;
+
+    %let drop_cols = %sysfunc(strip(&drop_cols));
+
+    %if %length(&drop_cols) > 0 %then %do;
+        %put DEBUG: Dropping columns not in desired list: &drop_cols;
+        %put NOTE: ************************************************************;
+        %put NOTE: *** Columns dropped from output: &drop_cols ***;
+        %put NOTE: ************************************************************;
+        data allvarout;
+            set allvarout(drop=&drop_cols);
+        run;
+    %end;
+    %else %do;
+        %put DEBUG: No columns to drop - all columns are in the desired list;
+    %end;
+
+    proc datasets library=work nolist nodetails;
+        delete _colinfo_;
+    quit;
+
     /**Create Excel output file with separate sheets per dataset**/
+    /**Column selection and ordering mirrors metadata_to_dict_cli20260320.py:**/
+    /**  desired_columns = [NUM, VARIABLE, TYPE, LEN, LABEL]                 **/
+    /**  FORMAT and INFORMAT are excluded to match Python output logic.       **/
     options nobyline;
     ods excel file="&out_file"
         options(sheet_name="#BYVAL(member)" embedded_titles='yes');
 
-    proc print data=allvarout noobs label;
+    proc report data=allvarout nowindows headline;
+        columns num variable type len label;
+        define num      / display 'Variable Number'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=0.9in just=center];
+        define variable / display 'Variable Name'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=1.5in just=center];
+        define type     / display 'Type'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=0.75in just=center];
+        define len      / display 'Length'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=0.75in just=center];
+        define label    / display 'Variable Label'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=3in just=center];
         by member;
-        pageby member;
         title "Variables in #BYVAL(member) Dataset";
-        label member='Dataset Name'
-              num='Variable Number'
-              variable='Variable Name'
-              type='Type'
-              len='Length'
-              format='Format'
-              informat='Informat'
-              label='Variable Label';
     run;
 
     title;
