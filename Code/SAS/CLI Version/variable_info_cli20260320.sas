@@ -19,6 +19,11 @@
 |   - Enforced column order: NUM, VARIABLE, TYPE, LEN, LABEL
 |   - Switched from PROC PRINT to PROC REPORT to enable per-column
 |     width formatting in the Excel workbook output
+|   - Centered alignment on all columns (header and data cells)
+|   - Added dynamic column-drop logic: any column not in the desired
+|     list is removed from the dataset before output, with DEBUG
+|     notification printed to the console and a highlighted NOTE
+|     written to the SAS log
 *------------------------------------------------------------------*
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
@@ -152,6 +157,39 @@
         by member num;
     run;
 
+    /**Identify and drop columns not in the desired list**/
+    /**Desired output columns: NUM, VARIABLE, TYPE, LEN, LABEL            **/
+    /**MEMBER is retained for BY-group processing but excluded from output.**/
+    /**This mirrors the column-drop logic in metadata_to_dict_cli20260320.py**/
+    %local drop_cols;
+    proc contents data=allvarout out=_colinfo_(keep=name) noprint;
+    run;
+
+    proc sql noprint;
+        select upcase(name) into :drop_cols separated by ' '
+        from _colinfo_
+        where upcase(name) not in ('NUM', 'VARIABLE', 'TYPE', 'LEN', 'LABEL', 'MEMBER');
+    quit;
+
+    %let drop_cols = %sysfunc(strip(&drop_cols));
+
+    %if %length(&drop_cols) > 0 %then %do;
+        %put DEBUG: Dropping columns not in desired list: &drop_cols;
+        %put NOTE: ************************************************************;
+        %put NOTE: *** Columns dropped from output: &drop_cols ***;
+        %put NOTE: ************************************************************;
+        data allvarout;
+            set allvarout(drop=&drop_cols);
+        run;
+    %end;
+    %else %do;
+        %put DEBUG: No columns to drop - all columns are in the desired list;
+    %end;
+
+    proc datasets library=work nolist nodetails;
+        delete _colinfo_;
+    quit;
+
     /**Create Excel output file with separate sheets per dataset**/
     /**Column selection and ordering mirrors metadata_to_dict_cli20260320.py:**/
     /**  desired_columns = [NUM, VARIABLE, TYPE, LEN, LABEL]                 **/
@@ -166,7 +204,8 @@
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.9in just=center];
         define variable / display 'Variable Name'
-                          style(column)=[cellwidth=1.5in];
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=1.5in just=center];
         define type     / display 'Type'
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.75in just=center];
@@ -174,7 +213,8 @@
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.75in just=center];
         define label    / display 'Variable Label'
-                          style(column)=[cellwidth=3in];
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=3in just=center];
         by member;
         title "Variables in #BYVAL(member) Dataset";
     run;
