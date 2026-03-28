@@ -283,19 +283,19 @@
 
     proc report data=allvarout nowindows headline;
         columns num variable type len label;
-        define num      / display 'Variable Number'
+        define num      / display 'Num'
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.9in just=center];
-        define variable / display 'Variable Name'
+        define variable / display 'Variable'
                           style(header)=[just=center]
                           style(column)=[cellwidth=1.5in just=center];
         define type     / display 'Type'
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.75in just=center];
-        define len      / display 'Length'
+        define len      / display 'Len'
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.75in just=center];
-        define label    / display 'Variable Label'
+        define label    / display 'Label'
                           style(header)=[just=center]
                           style(column)=[cellwidth=3in just=center];
         by member;
