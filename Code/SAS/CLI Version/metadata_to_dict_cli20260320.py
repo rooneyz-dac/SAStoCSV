@@ -186,13 +186,21 @@ def main():
             existing_renames = {k: v for k, v in normalized_col_rename_map.items() if k in df.columns}
             if existing_renames:
                 df.rename(columns=existing_renames, inplace=True)
-                print(f"DEBUG: Renamed columns {existing_renames} in sheet: {sheet}")
+                renamed_log = ', '.join(f'{k} -> {v}' for k, v in existing_renames.items())
+                print(f"DEBUG: Renamed variant columns to standard names in sheet {sheet}: {renamed_log}")
+                print("NOTE: ************************************************************")
+                print(f"NOTE: *** Columns renamed to standard names: {renamed_log} ***")
+                print("NOTE: ************************************************************")
 
             # Remove FORMAT and INFORMAT columns if they exist
             cols_to_drop = [c for c in ('FORMAT', 'INFORMAT') if c in df.columns]
             if cols_to_drop:
                 df.drop(columns=cols_to_drop, inplace=True)
-                print(f"DEBUG: Dropped columns {cols_to_drop} from sheet: {sheet}")
+                drop_log = ', '.join(cols_to_drop)
+                print(f"DEBUG: Dropping columns not in desired list from sheet {sheet}: {drop_log}")
+                print("NOTE: ************************************************************")
+                print(f"NOTE: *** Columns dropped from output: {drop_log} ***")
+                print("NOTE: ************************************************************")
 
             # Append to the combined DataFrame
             combined_df = pd.concat([combined_df, df], ignore_index=True)
@@ -212,6 +220,13 @@ def main():
     # Any desired column not present in the data is added with empty (NaN) values;
     # any column outside the desired set is dropped.
     desired_columns = ['NUM', 'VARIABLE', 'TYPE', 'LEN', 'POS', 'LABEL']
+    extra_cols = [c for c in combined_df.columns if c not in desired_columns]
+    if extra_cols:
+        extra_log = ', '.join(extra_cols)
+        print(f"DEBUG: Dropping columns not in desired list: {extra_log}")
+        print("NOTE: ************************************************************")
+        print(f"NOTE: *** Columns dropped from output: {extra_log} ***")
+        print("NOTE: ************************************************************")
     for col in desired_columns:
         if col not in combined_df.columns:
             combined_df[col] = pd.NA
