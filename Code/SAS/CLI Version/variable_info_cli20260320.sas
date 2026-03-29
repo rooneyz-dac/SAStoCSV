@@ -29,6 +29,20 @@
 |     list is removed from the dataset before output, with DEBUG
 |     notification printed to the console and a highlighted NOTE
 |     written to the SAS log
+| 2026-03-29: Column name variant fix
+|   - Added OPTIONS VALIDVARNAME=V7 to force standard V7 column names
+|     in PROC CONTENTS ODS output (prevents space-containing names
+|     like 'Variable Number' that occur under VALIDVARNAME=ANY)
+|   - Added space-containing column name variants to the rename map
+|     as defense-in-depth for environments that override VALIDVARNAME:
+|       NUM      <- VARIABLE NUMBER, VAR NUM, VAR NO
+|       VARIABLE <- VARIABLE NAME, VAR NAME
+|       TYPE     <- VAR TYPE, DATA TYPE, VARIABLE TYPE
+|       LEN      <- (no space variants needed)
+|       LABEL    <- VARIABLE LABEL, VAR LABEL
+|   - Updated rename SQL to use SAS name literals ('name'n) for any
+|     column names containing spaces, so PROC DATASETS RENAME works
+|     correctly under VALIDVARNAME=ANY
 *------------------------------------------------------------------*
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
@@ -79,6 +93,12 @@
 *------------------------------------------------------------------*/
 
 %macro variable_info_cli;
+    /**Force V7 variable naming so PROC CONTENTS ODS output uses standard**/
+    /**column names (Num, Variable, Type, Len, Label) instead of the     **/
+    /**space-containing names produced under VALIDVARNAME=ANY             **/
+    /**(e.g. 'Variable Number' instead of 'Num').                        **/
+    options validvarname=v7;
+
     /**Parse SYSPARM for input and output paths**/
     %local sysparm_value indir outdir pipe_pos;
     %let sysparm_value = &sysparm;
@@ -172,33 +192,55 @@
 
     data _col_map_;
         length variant $32 standard $32;
-        /* NUM variants */
+        /* NUM variants (underscore-separated) */
         variant='VARIABLE_NUMBER'; standard='NUM'; output;
         variant='VAR_NUM';         standard='NUM'; output;
         variant='VAR_NO';          standard='NUM'; output;
         variant='NUMBER';          standard='NUM'; output;
         variant='NO';              standard='NUM'; output;
-        /* VARIABLE variants */
+        /* NUM variants (space-separated — VALIDVARNAME=ANY) */
+        variant='VARIABLE NUMBER'; standard='NUM'; output;
+        variant='VAR NUM';         standard='NUM'; output;
+        variant='VAR NO';          standard='NUM'; output;
+        /* VARIABLE variants (underscore-separated) */
         variant='VARIABLE_NAME';   standard='VARIABLE'; output;
         variant='VAR_NAME';        standard='VARIABLE'; output;
         variant='NAME';            standard='VARIABLE'; output;
-        /* TYPE variants */
+        /* VARIABLE variants (space-separated — VALIDVARNAME=ANY) */
+        variant='VARIABLE NAME';   standard='VARIABLE'; output;
+        variant='VAR NAME';        standard='VARIABLE'; output;
+        /* TYPE variants (underscore-separated) */
         variant='VAR_TYPE';        standard='TYPE'; output;
         variant='DATA_TYPE';       standard='TYPE'; output;
         variant='VARIABLE_TYPE';   standard='TYPE'; output;
+        /* TYPE variants (space-separated — VALIDVARNAME=ANY) */
+        variant='VAR TYPE';        standard='TYPE'; output;
+        variant='DATA TYPE';       standard='TYPE'; output;
+        variant='VARIABLE TYPE';   standard='TYPE'; output;
         /* LEN variants */
         variant='LENGTH';          standard='LEN'; output;
         variant='SIZE';            standard='LEN'; output;
-        /* LABEL variants */
+        /* LABEL variants (underscore-separated) */
         variant='VARIABLE_LABEL';  standard='LABEL'; output;
         variant='VAR_LABEL';       standard='LABEL'; output;
         variant='DESCRIPTION';     standard='LABEL'; output;
         variant='DESC';            standard='LABEL'; output;
+        /* LABEL variants (space-separated — VALIDVARNAME=ANY) */
+        variant='VARIABLE LABEL';  standard='LABEL'; output;
+        variant='VAR LABEL';       standard='LABEL'; output;
     run;
 
     proc sql noprint;
-        /* Build rename pairs: only rename if variant exists and target does not */
-        select cats(a.variant, '=', a.standard)
+        /* Build rename pairs: only rename if variant exists and target does not.
+           Use the actual column name from dictionary.columns (b.name) for the
+           left side of the rename pair.  Wrap names containing spaces in SAS
+           name literals ('name'n) so PROC DATASETS RENAME works correctly
+           under VALIDVARNAME=ANY. */
+        select case
+                   when indexc(strip(b.name), ' ') > 0
+                   then cats("'", strip(b.name), "'n=", a.standard)
+                   else cats(strip(b.name), '=', a.standard)
+               end
             into :rename_pairs separated by ' '
         from _col_map_ a
         inner join dictionary.columns b
@@ -210,7 +252,7 @@
         );
 
         /* Build human-readable log of renames */
-        select catx(' -> ', a.variant, a.standard)
+        select catx(' -> ', strip(b.name), a.standard)
             into :renamed_log separated by ', '
         from _col_map_ a
         inner join dictionary.columns b
