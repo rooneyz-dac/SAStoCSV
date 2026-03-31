@@ -3,7 +3,7 @@
 | SHORT DESC   : Creates a variable information document with CLI
 |                parameter support
 *------------------------------------------------------------------*
-| CREATED BY   : Modified for CLI usage
+| CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-01-22
 *------------------------------------------------------------------*
 | VERSION UPDATES:

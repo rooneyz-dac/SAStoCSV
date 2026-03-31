@@ -3,16 +3,19 @@
 | SHORT DESC   : Bidirectional batch conversion between SAS7BDAT
 |                and XPT (SAS Transport) formats via CLI
 *------------------------------------------------------------------*
-| CREATED BY   : Modified for CLI usage
+| CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-11-21
 | VERSION      : 2.0
 *------------------------------------------------------------------*
 | VERSION UPDATES:
-| 2025-11-21: Initial CLI release
+| 2025-11-21: Initial CLI release (v2.0)
 |   - Added SYSPARM parsing for input and output directories
 |   - Added bidirectional conversion (SAS7BDAT <-> XPT)
 |   - Added automatic creation of DAC_XPT and DAC_SDTM subfolders
 |   - Added conversion error log generation
+| 2026-03-20: File standardized to 20260320 naming convention
+|   - No functional changes; header and filename updated to match
+|     the pipeline versioning convention used across all CLI scripts
 *------------------------------------------------------------------*
 | PURPOSE
 | Performs batch bidirectional conversion of SAS datasets between
