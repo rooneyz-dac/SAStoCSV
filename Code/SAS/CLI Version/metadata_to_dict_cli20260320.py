@@ -6,7 +6,7 @@ Purpose:
     Build a combined trial dictionary from a metadata summary Excel workbook.
 
 Usage:
-    python metadata_to_dict_cli20260320.py <input_excel> <output_dir> <trial_name> [input_dir]
+    python metadata_to_dict_cli20260320.py <input_excel> <output_dir> <trial_name> [input_dir] [--format-columns]
 
 Positional arguments:
     input_excel     Path to the metadata Excel workbook (multiple sheets expected).
@@ -16,19 +16,27 @@ Positional arguments:
                     GGG/GG/G filename components matching the SAS naming convention.
                     If omitted, output_dir is used as a fallback.
 
+Optional flags:
+    --format-columns    Enable column formatting (off by default).
+                        When enabled, the following transformations are applied:
+                          - Variant column names are renamed to standard names:
+                              NUM      <- 'VARIABLE NUMBER', 'VAR NUM', 'VAR NO', 'NUMBER', 'NO'
+                              VARIABLE <- 'VARIABLE NAME', 'VAR NAME', 'NAME'
+                              TYPE     <- 'VAR TYPE', 'DATA TYPE', 'VARIABLE TYPE'
+                              LEN      <- 'LENGTH', 'SIZE'
+                              POS      <- 'POSITION', 'START POSITION', 'COLUMN POSITION', 'START'
+                              LABEL    <- 'VARIABLE LABEL', 'VAR LABEL', 'DESCRIPTION', 'DESC'
+                          - FORMAT and INFORMAT columns are dropped.
+                          - Output is normalized to exactly these columns in order:
+                              NUM, VARIABLE, TYPE, LEN, POS, LABEL.
+                            Any column not in the desired set is dropped; any desired column
+                            absent from the source is added with empty (NaN) values.
+
 Behavior:
     - Reads every sheet in the workbook using header row 3 (zero-based index 2).
     - Normalizes column names to uppercase, replaces any whitespace runs (including newlines) with a single space, and strips.
-    - Renames many variant column names (case-insensitive/multi-line aware) to the standard names:
-        NUM      <- 'VARIABLE NUMBER', 'VAR NUM', 'VAR NO', 'NUMBER', 'NO'
-        VARIABLE <- 'VARIABLE NAME', 'VAR NAME', 'NAME'
-        TYPE     <- 'TYPE', 'VAR TYPE', 'DATA TYPE', 'VARIABLE TYPE'
-        LEN      <- 'LENGTH', 'LEN', 'SIZE'
-        POS      <- 'POSITION', 'POS', 'START POSITION', 'COLUMN POSITION', 'START'
-        LABEL    <- 'VARIABLE LABEL', 'VAR LABEL', 'LABEL', 'DESCRIPTION', 'DESC'
-    - Normalizes output to exactly these columns in order: NUM, VARIABLE, TYPE, LEN, POS, LABEL.
-      Any column not in the desired set is dropped; any desired column absent from the source
-      is added with empty (NaN) values.
+    - When --format-columns is enabled, renames many variant column names (case-insensitive/multi-line
+      aware) and normalizes output to exactly: NUM, VARIABLE, TYPE, LEN, POS, LABEL.
     - Concatenates all sheets and writes two output files to DAC_Documents:
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
@@ -61,8 +69,11 @@ ChangeLog:
                 dictionary_*.csv and dictionary_*.xlsx to DAC_Documents.
     2026-03-27  Accept optional input_dir argument; derive GGG/GG/G filename components from
                 input_dir (matching SAS variable_info naming convention) instead of output_dir.
+    2026-03-30  Added --format-columns toggle (default off) to control column rename/drop/normalize
+                formatting; switched argument parsing to argparse.
 """
 
+import argparse
 import pandas as pd
 import os
 import sys
@@ -77,23 +88,42 @@ def normalize_col(s: object) -> str:
 
 def main():
     # Step 1: Parse command-line arguments
-    if len(sys.argv) < 4 or len(sys.argv) > 5:
-        print("Error: Invalid number of arguments")
-        print("Usage: python metadata_to_dict_cli20260320.py <input_file> <output_dir> <trial_name> [input_dir]")
-        print(
-            "Example: python metadata_to_dict_cli20260320.py C:\\data\\meta_data_summary.xlsx C:\\data\\output FLINT2 C:\\data\\input")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Build a combined trial dictionary from a metadata summary Excel workbook."
+    )
+    parser.add_argument("input_excel", help="Path to the metadata Excel workbook (multiple sheets expected).")
+    parser.add_argument("output_dir", help="Base directory where DAC_Documents will be created/used.")
+    parser.add_argument("trial_name", help="Trial short name (will be uppercased) used for output filenames.")
+    parser.add_argument(
+        "input_dir",
+        nargs="?",
+        default=None,
+        help="(Optional) Path to the input data directory; used to derive GGG/GG/G filename components.",
+    )
+    parser.add_argument(
+        "--format-columns",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable column formatting (off by default). When enabled, variant column names are "
+            "renamed to standard names, FORMAT/INFORMAT columns are dropped, and output is "
+            "normalized to: NUM, VARIABLE, TYPE, LEN, POS, LABEL."
+        ),
+    )
+    args = parser.parse_args()
 
-    file_path = sys.argv[1]
-    output_base_dir = sys.argv[2]
-    trial_name = sys.argv[3].upper()
-    input_dir = sys.argv[4] if len(sys.argv) == 5 else None
+    file_path = args.input_excel
+    output_base_dir = args.output_dir
+    trial_name = args.trial_name.upper()
+    input_dir = args.input_dir
+    format_columns = args.format_columns
 
     print(f"DEBUG: Input file: {file_path}")
     print(f"DEBUG: Output directory: {output_base_dir}")
     print(f"DEBUG: Trial name: {trial_name}")
     print(f"DEBUG: Input directory: {input_dir}")
     print(f"DEBUG: Current working directory: {os.getcwd()}")
+    print(f"DEBUG: Column formatting: {'enabled' if format_columns else 'disabled'}")
 
     # Step 2: Validate input file exists
     if not os.path.exists(file_path):
@@ -183,24 +213,25 @@ def main():
             )
 
             # Rename specific columns if they exist (use normalized rename map)
-            existing_renames = {k: v for k, v in normalized_col_rename_map.items() if k in df.columns}
-            if existing_renames:
-                df.rename(columns=existing_renames, inplace=True)
-                renamed_log = ', '.join(f'{k} -> {v}' for k, v in existing_renames.items())
-                print(f"DEBUG: Renamed variant columns to standard names in sheet {sheet}: {renamed_log}")
-                print("NOTE: ************************************************************")
-                print(f"NOTE: *** Columns renamed to standard names: {renamed_log} ***")
-                print("NOTE: ************************************************************")
+            if format_columns:
+                existing_renames = {k: v for k, v in normalized_col_rename_map.items() if k in df.columns}
+                if existing_renames:
+                    df.rename(columns=existing_renames, inplace=True)
+                    renamed_log = ', '.join(f'{k} -> {v}' for k, v in existing_renames.items())
+                    print(f"DEBUG: Renamed variant columns to standard names in sheet {sheet}: {renamed_log}")
+                    print("NOTE: ************************************************************")
+                    print(f"NOTE: *** Columns renamed to standard names: {renamed_log} ***")
+                    print("NOTE: ************************************************************")
 
-            # Remove FORMAT and INFORMAT columns if they exist
-            cols_to_drop = [c for c in ('FORMAT', 'INFORMAT') if c in df.columns]
-            if cols_to_drop:
-                df.drop(columns=cols_to_drop, inplace=True)
-                drop_log = ', '.join(cols_to_drop)
-                print(f"DEBUG: Dropping columns not in desired list from sheet {sheet}: {drop_log}")
-                print("NOTE: ************************************************************")
-                print(f"NOTE: *** Columns dropped from output: {drop_log} ***")
-                print("NOTE: ************************************************************")
+                # Remove FORMAT and INFORMAT columns if they exist
+                cols_to_drop = [c for c in ('FORMAT', 'INFORMAT') if c in df.columns]
+                if cols_to_drop:
+                    df.drop(columns=cols_to_drop, inplace=True)
+                    drop_log = ', '.join(cols_to_drop)
+                    print(f"DEBUG: Dropping columns not in desired list from sheet {sheet}: {drop_log}")
+                    print("NOTE: ************************************************************")
+                    print(f"NOTE: *** Columns dropped from output: {drop_log} ***")
+                    print("NOTE: ************************************************************")
 
             # Append to the combined DataFrame
             combined_df = pd.concat([combined_df, df], ignore_index=True)
@@ -217,22 +248,26 @@ def main():
     print(f"DEBUG: Total rows in combined data: {len(combined_df)}")
 
     # Step 9: Normalize output to the desired column set in the required order.
+    # Only applied when --format-columns is enabled.
     # Any desired column not present in the data is added with empty (NaN) values;
     # any column outside the desired set is dropped.
-    desired_columns = ['NUM', 'VARIABLE', 'TYPE', 'LEN', 'POS', 'LABEL']
-    extra_cols = [c for c in combined_df.columns if c not in desired_columns]
-    if extra_cols:
-        extra_log = ', '.join(extra_cols)
-        print(f"DEBUG: Dropping columns not in desired list: {extra_log}")
-        print("NOTE: ************************************************************")
-        print(f"NOTE: *** Columns dropped from output: {extra_log} ***")
-        print("NOTE: ************************************************************")
-    for col in desired_columns:
-        if col not in combined_df.columns:
-            combined_df[col] = pd.NA
-            print(f"DEBUG: Added missing column '{col}' with empty values")
-    combined_df = combined_df[desired_columns]
-    print(f"DEBUG: Output normalized to columns: {desired_columns}")
+    if format_columns:
+        desired_columns = ['NUM', 'VARIABLE', 'TYPE', 'LEN', 'POS', 'LABEL']
+        extra_cols = [c for c in combined_df.columns if c not in desired_columns]
+        if extra_cols:
+            extra_log = ', '.join(extra_cols)
+            print(f"DEBUG: Dropping columns not in desired list: {extra_log}")
+            print("NOTE: ************************************************************")
+            print(f"NOTE: *** Columns dropped from output: {extra_log} ***")
+            print("NOTE: ************************************************************")
+        for col in desired_columns:
+            if col not in combined_df.columns:
+                combined_df[col] = pd.NA
+                print(f"DEBUG: Added missing column '{col}' with empty values")
+        combined_df = combined_df[desired_columns]
+        print(f"DEBUG: Output normalized to columns: {desired_columns}")
+    else:
+        print("DEBUG: Column formatting disabled; output columns preserved as-is")
 
     # Step 10: Save the combined DataFrame to CSV and Excel in DAC_Documents folder
     date_stamp = date.today().strftime('%Y%m%d')
