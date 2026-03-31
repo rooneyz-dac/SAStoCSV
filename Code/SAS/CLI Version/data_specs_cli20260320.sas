@@ -3,16 +3,16 @@
 | SHORT DESC  : Creates a specifications document on a library of
 |               datasets with CLI parameter support
 *------------------------------------------------------------------*
-| CREATED BY  : Modified for CLI usage
+| CREATED BY  : DAC Development Team
 | ORIGINAL    : Meyers, Jeffrey (07/28/2016)
 *------------------------------------------------------------------*
 | VERSION UPDATES:
-| 2026-03-20: Extended SYSPARM to support optional macro parameters
-|   - Optional params passed as key=value pairs after output dir
 | 2025-01-21: Modified to accept CLI parameters via SYSPARM
 |   - Added input/output path parsing from SYSPARM
 |   - Added automatic creation of DAC_Documents folder
 |   - Added path validation
+| 2026-03-20: Extended SYSPARM to support optional macro parameters
+|   - Optional params passed as key=value pairs after output dir
 | See original data_specs macro for prior version history.
 *------------------------------------------------------------------*
 | PURPOSE

@@ -105,7 +105,7 @@
 #   - Required Python script:
 #     * metadata_to_dict_cli20260320.py
 #
-# Author: [Your Name]
+# Author: DAC Development Team
 # Created: 2025-11-22
 # Version: 1.0
 #
@@ -380,7 +380,10 @@ fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/library_info.log")"
 
-# Extract variable info file path from log
+# Construct the expected variable info file path using the input directory's
+# last path segment and today's date stamp. Falls back to a glob search in
+# DAC_Documents if the constructed path does not exist (e.g. when the input
+# directory has fewer than three path components).
 LIBNAME=$(basename "$INPUT_DIR" | tr -cd '[:alnum:]')
 DATE_STAMP=$(date +%Y%m%d)
 export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${LIBNAME}_${DATE_STAMP}.xlsx"

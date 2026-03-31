@@ -3,7 +3,7 @@
 | SHORT DESC   : Creates a library information document with CLI
 |                parameter support
 *------------------------------------------------------------------*
-| CREATED BY   : Modified for CLI usage
+| CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-01-21
 *------------------------------------------------------------------*
 | VERSION UPDATES:
@@ -12,6 +12,9 @@
 |   - Added automatic creation of DAC_Documents output subfolder
 |   - Added path validation for input and output directories
 |   - Output file name includes library name and date stamp
+| 2026-03-20: File standardized to 20260320 naming convention
+|   - No functional changes; header and filename updated to match
+|     the pipeline versioning convention used across all CLI scripts
 *------------------------------------------------------------------*
 | PURPOSE
 | Creates a library information summary for all datasets found in a

@@ -3,7 +3,7 @@
 | SHORT DESC   : Batch converts all SAS datasets in a directory to
 |                CSV format via command-line interface
 *------------------------------------------------------------------*
-| CREATED BY   : Modified for CLI usage
+| CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-11-21
 *------------------------------------------------------------------*
 | VERSION UPDATES:
@@ -11,6 +11,9 @@
 |   - Added SYSPARM parsing for input and output directories
 |   - Added automatic creation of DAC_CSV output subfolder
 |   - Added error log generation
+| 2026-03-20: File standardized to 20260320 naming convention
+|   - No functional changes; header and filename updated to match
+|     the pipeline versioning convention used across all CLI scripts
 *------------------------------------------------------------------*
 | PURPOSE
 | Exports all SAS datasets (.sas7bdat) found in a specified input
