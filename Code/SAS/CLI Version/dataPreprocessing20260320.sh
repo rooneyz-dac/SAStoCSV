@@ -198,7 +198,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -i)
             if [ -z "$2" ] || [[ "$2" == -* ]]; then
-                echo "Error: -i requires an input directory path"
+                echo "Error: -i flag requires an input directory path"
                 usage
             fi
             INPUT_DIR="$2"
@@ -206,7 +206,7 @@ while [ $# -gt 0 ]; do
             ;;
         -o)
             if [ -z "$2" ] || [[ "$2" == -* ]]; then
-                echo "Error: -o requires an output directory path"
+                echo "Error: -o flag requires an output directory path"
                 usage
             fi
             OUTPUT_DIR="$2"
