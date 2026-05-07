@@ -175,7 +175,7 @@ usage() {
     echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --trial-name=FLINT2 --format=wide"
     echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --lst=1"
     echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --log=1"
-    exit 1
+    exit "${1:-1}"
 }
 
 # Default values
@@ -196,6 +196,9 @@ DS_LST="0"
 # Parse flag arguments
 while [ $# -gt 0 ]; do
     case "$1" in
+        -h|--help)
+            usage 0
+            ;;
         -i)
             if [ $# -lt 2 ]; then
                 echo "Error: -i requires an argument"
