@@ -126,11 +126,15 @@
                 %let eq_pos = %sysfunc(findc(&ep_curr, =));
                 %if &eq_pos > 0 %then %do;
                     %let ep_name = %qupcase(%substr(&ep_curr, 1, %eval(&eq_pos - 1)));
-                    %if %eval(&eq_pos) < %length(&ep_curr) %then
+                    %if %eval(&eq_pos) < %length(&ep_curr) %then %do;
                         %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
-                    %else
+                    %end;
+                    %else %do;
                         %let ep_value = ;
-                    %if &ep_name = NAME_DIR %then %let name_dir = &ep_value;
+                    %end;
+                    %if &ep_name = NAME_DIR %then %do;
+                        %let name_dir = &ep_value;
+                    %end;
                 %end;
             %end;
         %end;
@@ -194,12 +198,13 @@
     /**When name_dir is provided (XPT-to-SAS conversion scenario), use it for   **/
     /**deriving the path segments in the output filename so the name reflects    **/
     /**the original study directory rather than the DAC_SDTM conversion folder. **/
+    /**Use both \ and / as path delimiters to handle Windows and Unix paths.    **/
     %local out_file g_parent gg_parent ggg_parent name_path;
     %if %length(%superq(name_dir)) > 0 %then %let name_path = &name_dir;
     %else %let name_path = &indir;
-    %let g_parent = %scan(&name_path, -1, \);
-    %let gg_parent = %scan(&name_path, -2, \);
-    %let ggg_parent = %scan(&name_path, -3, \);
+    %let g_parent = %scan(&name_path, -1, \/);
+    %let gg_parent = %scan(&name_path, -2, \/);
+    %let ggg_parent = %scan(&name_path, -3, \/);
     %let out_file = &doc_dir\variable_info_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
