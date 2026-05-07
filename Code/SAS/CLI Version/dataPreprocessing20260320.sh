@@ -197,7 +197,7 @@ DS_LST="0"
 while [ $# -gt 0 ]; do
     case "$1" in
         -i)
-            if [ -z "$2" ] || [[ "$2" == -* ]]; then
+            if [ $# -lt 2 ]; then
                 echo "Error: -i flag requires an input directory path"
                 usage
             fi
@@ -205,7 +205,7 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         -o)
-            if [ -z "$2" ] || [[ "$2" == -* ]]; then
+            if [ $# -lt 2 ]; then
                 echo "Error: -o flag requires an output directory path"
                 usage
             fi
