@@ -133,6 +133,10 @@
     %let _mergenoby=%sysfunc(getoption(mergenoby));
     %let _quotelenmax=%sysfunc(getoption(quotelenmax));
 
+    /**name_dir: optional path used for output file naming (set via SYSPARM)**/
+    %local name_dir;
+    %let name_dir = ;
+
     /*Set Options*/
     options NOQUOTELENMAX nonotes mergenoby=nowarn;
 
@@ -179,6 +183,7 @@
                     %else %if &ep_name = DEBUG %then %do;
                         %if %sysevalf(%superq(ep_value)^=,boolean) %then %let debug = &ep_value;
                     %end;
+                    %else %if &ep_name = NAME_DIR %then %let name_dir = &ep_value;
                 %end;
             %end;
             %put DEBUG: Parsed extra params: index=&index cat_threshold=&cat_threshold format=&format order=&order debug=&debug;
@@ -240,10 +245,15 @@
     %end;
 
     /**Set output file path**/
-    %local out_file g_parent gg_parent ggg_parent libname_text;
-    %let g_parent = %scan(&indir, -1, \);
-    %let gg_parent = %scan(&indir, -2, \);
-    %let ggg_parent = %scan(&indir, -3, \);
+    /**When name_dir is provided (XPT-to-SAS conversion scenario), use it for   **/
+    /**deriving the path segments in the output filename so the name reflects    **/
+    /**the original study directory rather than the DAC_SDTM conversion folder. **/
+    %local out_file g_parent gg_parent ggg_parent libname_text name_path;
+    %if %length(%superq(name_dir)) > 0 %then %let name_path = &name_dir;
+    %else %let name_path = &indir;
+    %let g_parent = %scan(&name_path, -1, \);
+    %let gg_parent = %scan(&name_path, -2, \);
+    %let ggg_parent = %scan(&name_path, -3, \);
     %let libname_text = &g_parent;
     %let out_file = &doc_dir\data_specs_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
