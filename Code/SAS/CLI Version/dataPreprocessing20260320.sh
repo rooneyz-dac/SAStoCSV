@@ -14,11 +14,11 @@
 #   - Builds trial dictionary from variable metadata
 #
 # Usage:
-#   ./dataPreprocessing20260320.sh <input_directory> [output_directory] [OPTIONS]
+#   ./dataPreprocessing20260320.sh -i <input_directory> [-o <output_directory>] [OPTIONS]
 #
 # Arguments:
-#   input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
-#   output_directory - Path where outputs and documentation will be saved [optional, default: E:\output]
+#   -i input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
+#   -o output_directory - Path where outputs and documentation will be saved [optional, default: E:\output]
 #
 # Options:
 #   --trial-name=NAME
@@ -70,12 +70,12 @@
 #       1           - Save SAS listing files to the output directory.
 #
 # Examples:
-#   ./dataPreprocessing20260320.sh "C:/data/input"
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output"
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --trial-name=FLINT2 --format=wide
-#   ./dataPreprocessing20260320.sh "/path/to/sas/data" "/path/to/output" --format=condensed --debug=1
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --lst=1
-#   ./dataPreprocessing20260320.sh "C:/data/input" "C:/data/output" --log=1
+#   ./dataPreprocessing20260320.sh -i "C:/data/input"
+#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output"
+#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --trial-name=FLINT2 --format=wide
+#   ./dataPreprocessing20260320.sh -i "/path/to/sas/data" -o "/path/to/output" --format=condensed --debug=1
+#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --lst=1
+#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --log=1
 #
 # Output Structure:
 #   output_directory/
@@ -120,11 +120,11 @@ set -e  # Exit on error
 
 # Display usage information
 usage() {
-    echo "Usage: ./dataPreprocessing20260320.sh <input_dir> [output_dir] [OPTIONS]"
+    echo "Usage: ./dataPreprocessing20260320.sh -i <input_dir> [-o <output_dir>] [OPTIONS]"
     echo ""
     echo "Arguments:"
-    echo "  input_dir              Path to directory containing SAS datasets (required)"
-    echo "  output_dir             Path where outputs will be saved (optional, default: E:\\output)"
+    echo "  -i input_dir           Path to directory containing SAS datasets (required)"
+    echo "  -o output_dir          Path where outputs will be saved (optional, default: E:\\output)"
     echo ""
     echo "Options:"
     echo "  --trial-name=NAME"
@@ -170,30 +170,17 @@ usage() {
     echo "      1           - Save SAS listing files to the output directory."
     echo ""
     echo "Examples:"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input'"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output'"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --trial-name=FLINT2 --format=wide"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --lst=1"
-    echo "  ./dataPreprocessing20260320.sh 'C:/data/input' 'C:/data/output' --log=1"
+    echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input'"
+    echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output'"
+    echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --trial-name=FLINT2 --format=wide"
+    echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --lst=1"
+    echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --log=1"
     exit 1
 }
 
-# Require at least one argument (input directory)
-if [ $# -lt 1 ]; then
-    echo "Error: Input directory is required"
-    usage
-fi
-
-# Parse first positional argument: input directory
-INPUT_DIR="$1"
-shift
-
-# Parse optional second positional argument: output directory (if not a flag)
+# Default input/output values
+INPUT_DIR=""
 OUTPUT_DIR="E:\\output"
-if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
-    OUTPUT_DIR="$1"
-    shift
-fi
 
 # Default values for optional data_specs parameters
 TRIAL_NAME=""
@@ -206,42 +193,76 @@ DS_DEBUG="0"
 DS_LOG="1"
 DS_LST="0"
 
-# Parse remaining flag arguments
-for arg in "$@"; do
-    case "$arg" in
+# Parse all arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -i)
+            if [ -z "$2" ] || [[ "$2" == -* ]]; then
+                echo "Error: -i requires an input directory path"
+                usage
+            fi
+            INPUT_DIR="$2"
+            shift 2
+            ;;
+        -o)
+            if [ -z "$2" ] || [[ "$2" == -* ]]; then
+                echo "Error: -o requires an output directory path"
+                usage
+            fi
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
         --trial-name=*)
-            TRIAL_NAME="${arg#*=}"
+            TRIAL_NAME="${1#*=}"
+            shift
             ;;
         --format=*)
-            DS_FORMAT="${arg#*=}"
+            DS_FORMAT="${1#*=}"
+            shift
             ;;
         --order=*)
-            DS_ORDER="${arg#*=}"
+            DS_ORDER="${1#*=}"
+            shift
             ;;
         --index=*)
-            DS_INDEX="${arg#*=}"
+            DS_INDEX="${1#*=}"
+            shift
             ;;
         --cat-threshold=*)
-            DS_CAT_THRESHOLD="${arg#*=}"
+            DS_CAT_THRESHOLD="${1#*=}"
+            shift
             ;;
         --where=*)
-            DS_WHERE="${arg#*=}"
+            DS_WHERE="${1#*=}"
+            shift
             ;;
         --debug=*)
-            DS_DEBUG="${arg#*=}"
+            DS_DEBUG="${1#*=}"
+            shift
             ;;
         --log=*)
-            DS_LOG="${arg#*=}"
+            DS_LOG="${1#*=}"
+            shift
             ;;
         --lst=*)
-            DS_LST="${arg#*=}"
+            DS_LST="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            usage
             ;;
         *)
-            echo "Error: Unknown option: $arg"
+            echo "Error: Unknown option: $1"
             usage
             ;;
     esac
 done
+
+# Validate required input directory argument
+if [ -z "$INPUT_DIR" ]; then
+    echo "Error: Input directory is required (use -i <input_dir>)"
+    usage
+fi
 
 # Default TRIAL_NAME to current date if not provided
 if [ -z "$TRIAL_NAME" ]; then
@@ -446,4 +467,3 @@ fi
 echo "=========================================="
 
 exit 0
-
