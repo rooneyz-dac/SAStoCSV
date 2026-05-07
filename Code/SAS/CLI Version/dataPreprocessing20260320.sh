@@ -178,6 +178,18 @@ usage() {
     exit 1
 }
 
+# Check whether a token is one of this script's option flags
+is_option_token() {
+    case "$1" in
+        -i|-o|-h|--help|--trial-name=*|--format=*|--order=*|--index=*|--cat-threshold=*|--where=*|--debug=*|--log=*|--lst=*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 # Default input/output values
 INPUT_DIR=""
 OUTPUT_DIR="E:\\output"
@@ -197,7 +209,7 @@ DS_LST="0"
 while [ $# -gt 0 ]; do
     case "$1" in
         -i)
-            if [ -z "$2" ]; then
+            if [ -z "$2" ] || is_option_token "$2"; then
                 echo "Error: -i flag requires an input directory path"
                 usage
             fi
@@ -205,7 +217,7 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         -o)
-            if [ -z "$2" ]; then
+            if [ -z "$2" ] || is_option_token "$2"; then
                 echo "Error: -o flag requires an output directory path"
                 usage
             fi
