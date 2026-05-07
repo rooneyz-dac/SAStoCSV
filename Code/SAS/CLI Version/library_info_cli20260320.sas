@@ -89,7 +89,7 @@
                 %let eq_pos = %sysfunc(findc(&ep_curr, =));
                 %if &eq_pos > 0 %then %do;
                     %let ep_name = %qupcase(%substr(&ep_curr, 1, %eval(&eq_pos - 1)));
-                    %if %eval(&eq_pos) < %length(&ep_curr) %then %do;
+                    %if &eq_pos < %length(&ep_curr) %then %do;
                         %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
                     %end;
                     %else %do;

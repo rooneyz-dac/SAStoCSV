@@ -374,7 +374,13 @@ if [ -d "$DAC_SDTM_DIR" ] && [ "$(ls -A "$DAC_SDTM_DIR" 2>/dev/null)" ]; then
         # No forward slash found; try Windows backslash separator
         ORIG_PARENT="${ORIG_INPUT_DIR%\\*}"
     fi
-    NAME_DIR="${ORIG_PARENT}/${XPT_FOLDER}"
+    # Use the same separator style as the original input path so that
+    # the SAS %scan calls parse path segments correctly.
+    if [[ "$ORIG_INPUT_DIR" == *\\* ]] && [[ "$ORIG_INPUT_DIR" != */* ]]; then
+        NAME_DIR="${ORIG_PARENT}\\${XPT_FOLDER}"
+    else
+        NAME_DIR="${ORIG_PARENT}/${XPT_FOLDER}"
+    fi
     echo "      File naming path set to: $NAME_DIR"
 fi
 
