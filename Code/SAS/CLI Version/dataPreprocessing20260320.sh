@@ -297,6 +297,11 @@ fi
 # Build base SYSPARM for most SAS scripts
 SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
 
+# Save the original input directory so file names can reflect the original path
+# even after INPUT_DIR is updated to the DAC_SDTM conversion folder below.
+ORIG_INPUT_DIR="$INPUT_DIR"
+NAME_DIR=""  # Will be set if XPT-to-SAS conversion occurs
+
 # Build the SAS -log and -print arguments based on the --log and --lst toggles.
 # When DS_LOG=1 (default), save .log files to the output directory.
 # When DS_LOG=0, suppress .log output using the null device.
@@ -358,6 +363,25 @@ if [ -d "$DAC_SDTM_DIR" ] && [ "$(ls -A "$DAC_SDTM_DIR" 2>/dev/null)" ]; then
     echo "      Updating input path to converted SAS files: $DAC_SDTM_DIR"
     INPUT_DIR="$DAC_SDTM_DIR"
     SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
+    # Build a naming path that preserves the original study context: keep the
+    # original input path's parent directory but replace the leaf folder with
+    # the DAC_SDTM folder name.  This means generated file names will still
+    # reflect the original data location while correctly showing the conversion
+    # step in the innermost folder segment.
+    XPT_FOLDER=$(basename "$DAC_SDTM_DIR")
+    ORIG_PARENT="${ORIG_INPUT_DIR%/*}"
+    if [ "$ORIG_PARENT" = "$ORIG_INPUT_DIR" ]; then
+        # No forward slash found; try Windows backslash separator
+        ORIG_PARENT="${ORIG_INPUT_DIR%\\*}"
+    fi
+    # Use the same separator style as the original input path so that
+    # the SAS %scan calls parse path segments correctly.
+    if [[ "$ORIG_INPUT_DIR" == *\\* ]] && [[ "$ORIG_INPUT_DIR" != */* ]]; then
+        NAME_DIR="${ORIG_PARENT}\\${XPT_FOLDER}"
+    else
+        NAME_DIR="${ORIG_PARENT}/${XPT_FOLDER}"
+    fi
+    echo "      File naming path set to: $NAME_DIR"
 fi
 
 # 2. Run SAS to CSV conversion
@@ -377,12 +401,19 @@ SAS_PRINT_3=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_3=(-print "$OUTPUT_DIR/variable_info.lst")
 fi
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$LOG_ARG_3" "${SAS_PRINT_3[@]}"
+VAR_INFO_SYSPARM="$SYSPARM"
+if [ -n "$NAME_DIR" ]; then
+    VAR_INFO_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|name_dir=${NAME_DIR}"
+fi
+"$SAS_EXE" -sysparm "$VAR_INFO_SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$LOG_ARG_3" "${SAS_PRINT_3[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/variable_info.log")"
 
 # 4. Generate data specifications
 echo "[4/6] Generating data specifications document..."
 DATA_SPECS_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|index=${DS_INDEX}|cat_threshold=${DS_CAT_THRESHOLD}|format=${DS_FORMAT}|order=${DS_ORDER}|where=${DS_WHERE}|debug=${DS_DEBUG}"
+if [ -n "$NAME_DIR" ]; then
+    DATA_SPECS_SYSPARM="${DATA_SPECS_SYSPARM}|name_dir=${NAME_DIR}"
+fi
 LOG_ARG_4=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/data_specs.log" || echo "$NULL_DEVICE")
 SAS_PRINT_4=()
 if [ "$LST_ENABLED" = "1" ]; then
@@ -398,14 +429,20 @@ SAS_PRINT_5=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_5=(-print "$OUTPUT_DIR/library_info.lst")
 fi
-"$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
+LIB_INFO_SYSPARM="$SYSPARM"
+if [ -n "$NAME_DIR" ]; then
+    LIB_INFO_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|name_dir=${NAME_DIR}"
+fi
+"$SAS_EXE" -sysparm "$LIB_INFO_SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/library_info.log")"
 
-# Construct the expected variable info file path using the input directory's
-# last path segment and today's date stamp. Falls back to a glob search in
-# DAC_Documents if the constructed path does not exist (e.g. when the input
-# directory has fewer than three path components).
-LIBNAME=$(basename "$INPUT_DIR" | tr -cd '[:alnum:]')
+# Construct the expected variable info file path using the naming directory's
+# last path segment and today's date stamp.  When XPT conversion occurred,
+# NAME_DIR reflects the original study path with DAC_SDTM as the leaf folder,
+# matching the naming logic in variable_info_cli20260320.sas.  Falls back to a
+# glob search in DAC_Documents if the constructed path does not exist.
+NAMING_DIR="${NAME_DIR:-$INPUT_DIR}"
+LIBNAME=$(basename "$NAMING_DIR" | tr -cd '[:alnum:]')
 DATE_STAMP=$(date +%Y%m%d)
 export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${LIBNAME}_${DATE_STAMP}.xlsx"
 
@@ -440,7 +477,7 @@ fi
 # Execute Python script if command found
 if [ -n "$PYTHON_CMD" ]; then
     echo "      Using Python command: $PYTHON_CMD"
-    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME" "$INPUT_DIR"
+    "$PYTHON_CMD" "$SCRIPT_DIR/metadata_to_dict_cli20260320.py" "$VARIABLE_INFO_FILE" "$OUTPUT_DIR" "$TRIAL_NAME" "${NAME_DIR:-$INPUT_DIR}"
     if [ $? -eq 0 ]; then
         echo "      Complete."
     else

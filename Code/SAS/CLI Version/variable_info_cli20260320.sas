@@ -100,8 +100,10 @@
     options validvarname=v7;
 
     /**Parse SYSPARM for input and output paths**/
-    %local sysparm_value indir outdir pipe_pos;
+    /**Optional third segment: pipe-delimited key=value pairs (e.g. name_dir=...) **/
+    %local sysparm_value indir outdir pipe_pos name_dir;
     %let sysparm_value = &sysparm;
+    %let name_dir = ;
     %put DEBUG: Raw SYSPARM value = &sysparm_value;
 
     %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
@@ -109,7 +111,36 @@
 
     %if &pipe_pos > 0 %then %do;
         %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
-        %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+        %local remaining pipe2_pos;
+        %let remaining = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+
+        /* Check for additional pipe-separated optional key=value parameters */
+        %let pipe2_pos = %sysfunc(findc(&remaining, |));
+        %if &pipe2_pos > 0 %then %do;
+            %let outdir = %substr(&remaining, 1, %eval(&pipe2_pos - 1));
+            %local extra_params ep_count ep_i ep_curr ep_name eq_pos ep_value;
+            %let extra_params = %substr(&remaining, %eval(&pipe2_pos + 1));
+            %let ep_count = %sysfunc(countw(&extra_params, |));
+            %do ep_i = 1 %to &ep_count;
+                %let ep_curr = %scan(&extra_params, &ep_i, |);
+                %let eq_pos = %sysfunc(findc(&ep_curr, =));
+                %if &eq_pos > 0 %then %do;
+                    %let ep_name = %qupcase(%substr(&ep_curr, 1, %eval(&eq_pos - 1)));
+                    %if &eq_pos < %length(&ep_curr) %then %do;
+                        %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
+                    %end;
+                    %else %do;
+                        %let ep_value = ;
+                    %end;
+                    %if &ep_name = NAME_DIR %then %do;
+                        %let name_dir = &ep_value;
+                    %end;
+                %end;
+            %end;
+        %end;
+        %else %do;
+            %let outdir = &remaining;
+        %end;
     %end;
     %else %do;
         %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
@@ -164,10 +195,16 @@
     %end;
 
     /**Set output file path**/
-    %local out_file g_parent gg_parent ggg_parent;
-    %let g_parent = %scan(&indir, -1, \);
-    %let gg_parent = %scan(&indir, -2, \);
-    %let ggg_parent = %scan(&indir, -3, \);
+    /**When name_dir is provided (XPT-to-SAS conversion scenario), use it for   **/
+    /**deriving the path segments in the output filename so the name reflects    **/
+    /**the original study directory rather than the DAC_SDTM conversion folder. **/
+    /**Use both \ and / as path delimiters to handle Windows and Unix paths.    **/
+    %local out_file g_parent gg_parent ggg_parent name_path;
+    %if %length(%superq(name_dir)) > 0 %then %let name_path = &name_dir;
+    %else %let name_path = &indir;
+    %let g_parent = %scan(&name_path, -1, \/);
+    %let gg_parent = %scan(&name_path, -2, \/);
+    %let ggg_parent = %scan(&name_path, -3, \/);
     %let out_file = &doc_dir\variable_info_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
