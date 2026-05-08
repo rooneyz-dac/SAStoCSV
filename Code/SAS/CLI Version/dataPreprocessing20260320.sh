@@ -111,6 +111,16 @@
 # Created: 2025-11-22
 # Version: 1.1
 #
+# Version History:
+#   1.0 (2025-11-22): Initial release
+#   1.1 (2026-05-08): Added dataset name standardization step
+#     - New step [1/7]: runs rename_study_domains_cli20260320.sas before
+#       any conversion so all outputs use consistent domain-only names
+#       (e.g., AE_PLACEBO -> AE).
+#     - Renamed steps [1/6]-[6/6] to [2/7]-[7/7].
+#     - Added DAC_SAS to output structure; INPUT_DIR is updated to DAC_SAS
+#       or DAC_XPT when the rename step produces standardized files.
+#
 # Notes:
 #   - Script exits on first error (set -e)
 #   - Step 1 standardizes dataset names; subsequent steps use standardized names
