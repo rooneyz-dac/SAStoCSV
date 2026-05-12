@@ -91,8 +91,9 @@
 #   │   ├── library_info_*.xlsx
 #   │   ├── dictionary_*.csv
 #   │   └── dictionary_*.xlsx
-#   ├── *.log                 - SAS execution logs (only when --log=1)
-#   ├── *.lst                 - SAS listing files (only when --lst=1)
+#   ├── DAC_Logs/             - SAS log and listing files
+#   │   ├── *.log             - SAS execution logs (only when --log=1)
+#   │   └── *.lst             - SAS listing files (only when --lst=1)
 #   └── pipeline_vars.env     - Environment variables for chaining scripts
 #
 # Requirements:
@@ -181,8 +182,8 @@ detailed_help() {
     echo "      DAC_SDTM/         - Converted SAS datasets from XPT input (step 2)"
     echo "      DAC_CSV/          - CSV exports (step 3)"
     echo "      DAC_Documents/    - All documentation files (steps 4-7)"
-    echo "      *.log             - SAS execution logs (when --log=1; steps 1-6)"
-    echo "      *.lst             - SAS listing files (when --lst=1; steps 1-6)"
+    echo "      DAC_Logs/*.log    - SAS execution logs (when --log=1; steps 1-6)"
+    echo "      DAC_Logs/*.lst    - SAS listing files (when --lst=1; steps 1-6)"
     echo "    Effect: Sets the root output directory. All pipeline subdirectories,"
     echo "      documentation files, and optional log/listing files are created"
     echo "      under this path. Defaults to E:\\output if not provided."
@@ -269,12 +270,12 @@ detailed_help() {
     echo "      [5/7] data_specs_cli20260320.sas            -> data_specs.log"
     echo "      [6/7] library_info_cli20260320.sas          -> library_info.log"
     echo "    Output affected:"
-    echo "      <output_dir>/rename_domains.log"
-    echo "      <output_dir>/sas_to_xpt.log"
-    echo "      <output_dir>/sas_to_csv.log"
-    echo "      <output_dir>/variable_info.log"
-    echo "      <output_dir>/data_specs.log"
-    echo "      <output_dir>/library_info.log"
+    echo "      <output_dir>/DAC_Logs/rename_domains.log"
+    echo "      <output_dir>/DAC_Logs/sas_to_xpt.log"
+    echo "      <output_dir>/DAC_Logs/sas_to_csv.log"
+    echo "      <output_dir>/DAC_Logs/variable_info.log"
+    echo "      <output_dir>/DAC_Logs/data_specs.log"
+    echo "      <output_dir>/DAC_Logs/library_info.log"
     echo "    Effect: Controls whether SAS execution logs are written to disk."
     echo "        1 (default) - Save .log files to the output directory."
     echo "        0           - Route log output to null device; no .log files written."
@@ -288,12 +289,12 @@ detailed_help() {
     echo "      [5/7] data_specs_cli20260320.sas            -> data_specs.lst"
     echo "      [6/7] library_info_cli20260320.sas          -> library_info.lst"
     echo "    Output affected:"
-    echo "      <output_dir>/rename_domains.lst"
-    echo "      <output_dir>/sas_to_xpt.lst"
-    echo "      <output_dir>/sas_to_csv.lst"
-    echo "      <output_dir>/variable_info.lst"
-    echo "      <output_dir>/data_specs.lst"
-    echo "      <output_dir>/library_info.lst"
+    echo "      <output_dir>/DAC_Logs/rename_domains.lst"
+    echo "      <output_dir>/DAC_Logs/sas_to_xpt.lst"
+    echo "      <output_dir>/DAC_Logs/sas_to_csv.lst"
+    echo "      <output_dir>/DAC_Logs/variable_info.lst"
+    echo "      <output_dir>/DAC_Logs/data_specs.lst"
+    echo "      <output_dir>/DAC_Logs/library_info.lst"
     echo "    Effect: Controls whether SAS listing (.lst) files are written to disk."
     echo "        0 (default) - Suppress listing output; no .lst files written."
     echo "        1           - Save .lst files to the output directory."
@@ -491,6 +492,13 @@ if [ ! -d "$OUTPUT_DIR" ]; then
     echo "Created output directory: $OUTPUT_DIR"
 fi
 
+# Create DAC_Logs directory for SAS log and listing files
+DAC_LOGS_DIR="${OUTPUT_DIR}/DAC_Logs"
+if [ ! -d "$DAC_LOGS_DIR" ]; then
+    mkdir -p "$DAC_LOGS_DIR"
+    echo "Created logs directory: $DAC_LOGS_DIR"
+fi
+
 # Get script directory for finding SAS scripts and Python script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -560,13 +568,13 @@ echo "=========================================="
 
 # 1. Standardize dataset names (rename study-specific suffixes)
 echo "[1/7] Standardizing dataset names..."
-LOG_ARG_0=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/rename_domains.log" || echo "$NULL_DEVICE")
+LOG_ARG_0=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/rename_domains.log" || echo "$NULL_DEVICE")
 SAS_PRINT_0=()
 if [ "$LST_ENABLED" = "1" ]; then
-    SAS_PRINT_0=(-print "$OUTPUT_DIR/rename_domains.lst")
+    SAS_PRINT_0=(-print "$DAC_LOGS_DIR/rename_domains.lst")
 fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/rename_study_domains_cli20260320.sas" -log "$LOG_ARG_0" "${SAS_PRINT_0[@]}"
-echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/rename_domains.log")"
+echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/rename_domains.log")"
 
 # Check if the rename script created DAC_SAS (SAS files renamed) or DAC_XPT (XPT files renamed)
 # and update INPUT_DIR accordingly so all subsequent steps use standardized names.
@@ -600,13 +608,13 @@ fi
 
 # 2. Run SAS to XPT conversion
 echo "[2/7] Converting SAS datasets to XPT format..."
-LOG_ARG_1=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/sas_to_xpt.log" || echo "$NULL_DEVICE")
+LOG_ARG_1=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/sas_to_xpt.log" || echo "$NULL_DEVICE")
 SAS_PRINT_1=()
 if [ "$LST_ENABLED" = "1" ]; then
-    SAS_PRINT_1=(-print "$OUTPUT_DIR/sas_to_xpt.lst")
+    SAS_PRINT_1=(-print "$DAC_LOGS_DIR/sas_to_xpt.lst")
 fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$LOG_ARG_1" "${SAS_PRINT_1[@]}"
-echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/sas_to_xpt.log")"
+echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/sas_to_xpt.log")"
 
 # Check if XPT files were converted to SAS7BDAT (DAC_SDTM folder created)
 DAC_SDTM_DIR="${OUTPUT_DIR}/DAC_SDTM"
@@ -626,27 +634,27 @@ fi
 
 # 3. Run SAS to CSV conversion
 echo "[3/7] Converting SAS datasets to CSV..."
-LOG_ARG_2=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/sas_to_csv.log" || echo "$NULL_DEVICE")
+LOG_ARG_2=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/sas_to_csv.log" || echo "$NULL_DEVICE")
 SAS_PRINT_2=()
 if [ "$LST_ENABLED" = "1" ]; then
-    SAS_PRINT_2=(-print "$OUTPUT_DIR/sas_to_csv.lst")
+    SAS_PRINT_2=(-print "$DAC_LOGS_DIR/sas_to_csv.lst")
 fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$LOG_ARG_2" "${SAS_PRINT_2[@]}"
-echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/sas_to_csv.log")"
+echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/sas_to_csv.log")"
 
 # 4. Generate variable information and capture output file location
 echo "[4/7] Generating variable information document..."
-LOG_ARG_3=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/variable_info.log" || echo "$NULL_DEVICE")
+LOG_ARG_3=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/variable_info.log" || echo "$NULL_DEVICE")
 SAS_PRINT_3=()
 if [ "$LST_ENABLED" = "1" ]; then
-    SAS_PRINT_3=(-print "$OUTPUT_DIR/variable_info.lst")
+    SAS_PRINT_3=(-print "$DAC_LOGS_DIR/variable_info.lst")
 fi
 VAR_INFO_SYSPARM="$SYSPARM"
 if [ -n "$NAME_DIR" ]; then
     VAR_INFO_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|name_dir=${NAME_DIR}"
 fi
 "$SAS_EXE" -sysparm "$VAR_INFO_SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$LOG_ARG_3" "${SAS_PRINT_3[@]}"
-echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/variable_info.log")"
+echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/variable_info.log")"
 
 # 5. Generate data specifications
 echo "[5/7] Generating data specifications document..."
@@ -654,27 +662,27 @@ DATA_SPECS_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|index=${DS_INDEX}|cat_threshold=$
 if [ -n "$NAME_DIR" ]; then
     DATA_SPECS_SYSPARM="${DATA_SPECS_SYSPARM}|name_dir=${NAME_DIR}"
 fi
-LOG_ARG_4=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/data_specs.log" || echo "$NULL_DEVICE")
+LOG_ARG_4=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/data_specs.log" || echo "$NULL_DEVICE")
 SAS_PRINT_4=()
 if [ "$LST_ENABLED" = "1" ]; then
-    SAS_PRINT_4=(-print "$OUTPUT_DIR/data_specs.lst")
+    SAS_PRINT_4=(-print "$DAC_LOGS_DIR/data_specs.lst")
 fi
 "$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$LOG_ARG_4" "${SAS_PRINT_4[@]}"
-echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/data_specs.log")"
+echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/data_specs.log")"
 
 # 6. Generate library information
 echo "[6/7] Generating library information document..."
-LOG_ARG_5=$([ "$LOG_ENABLED" = "1" ] && echo "$OUTPUT_DIR/library_info.log" || echo "$NULL_DEVICE")
+LOG_ARG_5=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/library_info.log" || echo "$NULL_DEVICE")
 SAS_PRINT_5=()
 if [ "$LST_ENABLED" = "1" ]; then
-    SAS_PRINT_5=(-print "$OUTPUT_DIR/library_info.lst")
+    SAS_PRINT_5=(-print "$DAC_LOGS_DIR/library_info.lst")
 fi
 LIB_INFO_SYSPARM="$SYSPARM"
 if [ -n "$NAME_DIR" ]; then
     LIB_INFO_SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}|name_dir=${NAME_DIR}"
 fi
 "$SAS_EXE" -sysparm "$LIB_INFO_SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
-echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/library_info.log")"
+echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/library_info.log")"
 
 # Construct the expected variable info file path using all three naming path
 # segments (ggg_parent, gg_parent, g_parent) and today's date stamp, matching
@@ -759,6 +767,7 @@ fi
 if [ -d "$DAC_SDTM_DIR" ]; then
     echo "  - SDTM:      $DAC_SDTM_DIR"
 fi
+echo "  - Logs:      $DAC_LOGS_DIR"
 echo "=========================================="
 
 exit 0
