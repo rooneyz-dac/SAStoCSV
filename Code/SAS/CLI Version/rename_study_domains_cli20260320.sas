@@ -6,7 +6,7 @@
 *------------------------------------------------------------------*
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2026-05-08
-| VERSION      : 1.0
+| VERSION      : 1.1
 *------------------------------------------------------------------*
 | VERSION UPDATES:
 | 2026-05-08: Initial CLI release (v1.0)
@@ -19,12 +19,21 @@
 |     in the input directory has a non-standard name
 |   - Files without underscores are copied unchanged to the new
 |     folder so the folder is a complete, self-consistent set
+| 2026-05-12: SAS7BDAT logic updated to match OriginalSAS (v1.1)
+|   - Replaced Windows DIR-based file listing with libname +
+|     dictionary.tables discovery (aligns with
+|     rename_study_domains_ZRlocalCopy.sas)
+|   - ALL datasets are now copied to DAC_SAS first via proc copy,
+|     then datasets with suffixes are renamed in-place in DAC_SAS
+|     using proc datasets change (same approach as original script)
+|   - Standard name derived with scan(memname, 1, '_') -- identical
+|     to the original script
 *------------------------------------------------------------------*
 | PURPOSE
 | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
 | input directory and standardizes their names by removing
 | study-specific suffixes (e.g., converting AE_PLACEBO to AE).
-| When any file requires renaming, ALL files of that type are
+| When any dataset requires renaming, ALL datasets of that type are
 | copied with standardized names to a new subfolder:
 |   - DAC_SAS for .sas7bdat files
 |   - DAC_XPT for .xpt files
@@ -32,12 +41,12 @@
 | complete, consistently named set of datasets.
 |
 | Naming rule: the standard name is the portion of the dataset name
-| before the first underscore.  E.g.:
+| before the first underscore (scan(memname, 1, '_')).  E.g.:
 |   AE_PLACEBO  -> AE
 |   DM_TRT      -> DM
 |   CM          -> CM  (unchanged; no folder created for this alone)
 |
-| 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+| 1.1: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
 |                    files to be renamed
 | OUTPUT_DIRECTORY = Path to folder where DAC_SAS and/or DAC_XPT
@@ -51,7 +60,7 @@
 | OUTPUT STRUCTURE:
 |   output_directory\
 |   ├── DAC_SAS\    - Standardized SAS7BDAT datasets
-|   │                 (created only when any .sas7bdat file has
+|   │                 (created only when any .sas7bdat dataset has
 |   │                  a non-standard suffix)
 |   └── DAC_XPT\   - Standardized XPT datasets
 |                     (created only when any .xpt file has
@@ -59,12 +68,12 @@
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
 | SAS v9.4 or Higher: Yes
-| Windows:            Yes (uses DIR command for file listing)
+| Windows:            Yes
 *------------------------------------------------------------------*
 | NOTES
-| - If two input files share the same standard name (e.g.,
+| - If two input datasets share the same standard name (e.g.,
 |   AE_PLACEBO and AE_TREATMENT both map to AE), a WARNING is
-|   issued and those files are skipped.  Resolve naming conflicts
+|   issued and those datasets are skipped.  Resolve naming conflicts
 |   in the source data before running the pipeline.
 | - For XPT files the script queries the SAS transport library to
 |   obtain the actual member name inside each file.  SAS XPT
@@ -179,31 +188,35 @@
 
     /* ============================================================
        PART 1: Process SAS7BDAT files
+       Uses dictionary.tables to discover library members, then
+       renames with proc datasets change (logic from
+       rename_study_domains_ZRlocalCopy.sas).
        ============================================================ */
 
-    filename _sas7b pipe "dir /b ""&indir\*.sas7bdat"" 2>nul";
+    /* Point a libname at the input directory so SAS can query its
+       member metadata via dictionary.tables */
+    libname _inlib "&indir";
 
-    data _work_sas;
-        infile _sas7b truncover;
-        input filename $256.;
-        if filename = '' then delete;
-        length dsname $32 standard_name $32;
-        dsname        = upcase(scan(filename, 1, '.'));
-        standard_name = upcase(scan(dsname,   1, '_'));
-        needs_rename  = (dsname ne standard_name);
-    run;
-
-    filename _sas7b clear;
-
+    /* Build a table of datasets that need renaming (have a suffix) */
     proc sql noprint;
-        select count(*) into :sas_total        trimmed from _work_sas;
-        select count(*) into :sas_rename_count trimmed from _work_sas
-            where needs_rename = 1;
+        create table _work_sas as
+        select
+            memname,
+            scan(memname, 1, '_') as standard_name length=32
+        from dictionary.tables
+        where upcase(libname) = '_INLIB'
+          and index(memname, '_') > 0;
+
+        select count(*) into :sas_rename_count trimmed from _work_sas;
+
+        select count(*) into :sas_total trimmed
+        from dictionary.tables
+        where upcase(libname) = '_INLIB';
     quit;
 
-    %put NOTE: Found &sas_total SAS7BDAT file(s), &sas_rename_count require renaming.;
+    %put NOTE: Found &sas_total SAS7BDAT dataset(s) in library, &sas_rename_count require renaming.;
 
-    %if &sas_total > 0 and &sas_rename_count > 0 %then %do;
+    %if &sas_rename_count > 0 %then %do;
 
         /* Check for duplicate standard names and warn/exclude */
         proc sql noprint;
@@ -223,16 +236,14 @@
                 put "  Standard name '" standard_name +(-1)
                     "' has " n "conflicting source datasets.";
             run;
-            /* Exclude files with duplicate standard names */
+            /* Exclude datasets with duplicate standard names */
             proc sql noprint;
                 delete from _work_sas
                 where standard_name in (select standard_name from _work_sas_dups);
             quit;
             /* Re-count after exclusion */
             proc sql noprint;
-                select count(*) into :sas_total        trimmed from _work_sas;
-                select count(*) into :sas_rename_count trimmed from _work_sas
-                    where needs_rename = 1;
+                select count(*) into :sas_rename_count trimmed from _work_sas;
             quit;
         %end;
 
@@ -249,6 +260,7 @@
                 %let _rc = %sysfunc(dcreate(DAC_SAS, &outdir));
                 %if &_rc = %then %do;
                     %put ERROR: Failed to create directory &dac_sas_dir;
+                    libname _inlib clear;
                     %abort;
                 %end;
             %end;
@@ -256,35 +268,23 @@
                 %put NOTE: Directory &dac_sas_dir already exists.;
             %end;
 
-            libname _inlib  "&indir";
+            /* Copy ALL datasets from input library to DAC_SAS so the
+               output folder is a complete, self-consistent set.
+               Original input files are never modified. */
             libname _outdac "&dac_sas_dir";
+            proc copy in=_inlib out=_outdac memtype=data; run;
+            libname _inlib clear;
 
-            /* Copy each SAS dataset to DAC_SAS, renaming those with suffixes.
-               Strategy: copy to DAC_SAS with original name, then rename the
-               copy in DAC_SAS to the standard name.  The original input files
-               are never modified. */
+            /* Rename datasets that have suffixes in DAC_SAS using
+               proc datasets change (same approach as the original script) */
             data _null_;
                 set _work_sas;
-                length dsname_lc $32 std_lc $32;
-                dsname_lc = lowcase(dsname);
-                std_lc    = lowcase(standard_name);
-
-                /* Copy dataset to DAC_SAS */
-                call execute(
-                    'proc copy in=_inlib out=_outdac memtype=data; select ' ||
-                    strip(dsname_lc) || '; run;'
-                );
-
-                /* Rename the copy in DAC_SAS if a suffix was present */
-                if needs_rename then do;
-                    call execute(
-                        'proc datasets library=_outdac nolist; change ' ||
-                        strip(dsname_lc) || '=' || strip(std_lc) || '; quit;'
-                    );
-                end;
+                cmd = 'proc datasets lib=_outdac nolist; change ' ||
+                      strip(memname) || ' = ' || strip(standard_name) || '; quit;';
+                call execute(cmd);
+                put cmd;
             run;
 
-            libname _inlib  clear;
             libname _outdac clear;
 
             %put NOTE: SAS dataset standardization complete.;
@@ -292,9 +292,10 @@
 
         %end; /* sas_rename_count > 0 after dedup */
 
-    %end; /* sas_total > 0 and sas_rename_count > 0 */
-    %else %if &sas_total > 0 %then %do;
-        %put NOTE: All &sas_total SAS7BDAT file(s) already have standard names. No DAC_SAS folder created.;
+    %end; /* sas_rename_count > 0 */
+    %else %do;
+        %put NOTE: All &sas_total SAS7BDAT dataset(s) already have standard names. No DAC_SAS folder created.;
+        libname _inlib clear;
     %end;
 
     proc datasets lib=work nolist; delete _work_sas; quit;
