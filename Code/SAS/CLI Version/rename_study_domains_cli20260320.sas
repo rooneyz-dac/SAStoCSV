@@ -201,7 +201,7 @@
             where needs_rename = 1;
     quit;
 
-    %put NOTE: Found &sas_total SAS7BDAT file(s); &sas_rename_count require renaming.;
+    %put NOTE: Found &sas_total SAS7BDAT file(s), &sas_rename_count require renaming.;
 
     %if &sas_total > 0 and &sas_rename_count > 0 %then %do;
 
@@ -328,7 +328,7 @@
             where needs_rename = 1;
     quit;
 
-    %put NOTE: Found &xpt_total XPT file(s); &xpt_rename_count require renaming.;
+    %put NOTE: Found &xpt_total XPT file(s), &xpt_rename_count require renaming.;
 
     %if &xpt_total > 0 and &xpt_rename_count > 0 %then %do;
 
