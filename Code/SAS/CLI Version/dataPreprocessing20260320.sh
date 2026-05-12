@@ -199,6 +199,27 @@ usage() {
     exit "${1:-1}"
 }
 
+# Build NAME_DIR by replacing the leaf segment of ORIG_INPUT_DIR with FOLDER_NAME.
+# This preserves the original ggg_parent and gg_parent path segments in all
+# documentation output filenames even after INPUT_DIR is redirected to a generated
+# folder.  Uses the same path separator style as ORIG_INPUT_DIR (backslash on
+# pure-Windows paths, forward slash otherwise) so that downstream SAS %scan calls
+# parse segments correctly.  Sets NAME_DIR in the calling scope.
+build_name_dir() {
+    local folder_name="$1"
+    local orig_parent="${ORIG_INPUT_DIR%/*}"
+    if [ "$orig_parent" = "$ORIG_INPUT_DIR" ]; then
+        # No forward slash found; fall back to Windows backslash separator
+        orig_parent="${ORIG_INPUT_DIR%\\*}"
+    fi
+    if [[ "$ORIG_INPUT_DIR" == *\\* ]] && [[ "$ORIG_INPUT_DIR" != */* ]]; then
+        NAME_DIR="${orig_parent}\\${folder_name}"
+    else
+        NAME_DIR="${orig_parent}/${folder_name}"
+    fi
+    echo "      File naming path set to: $NAME_DIR"
+}
+
 # Default values
 INPUT_DIR=""
 OUTPUT_DIR="E:\\output"
@@ -397,18 +418,7 @@ if [ -d "$DAC_SAS_DIR" ] && [ "$(ls -A "$DAC_SAS_DIR" 2>/dev/null)" ]; then
     # the DAC_SAS folder name.  This ensures documentation filenames retain
     # the original ggg_parent and gg_parent path segments even though the
     # actual input is now the generated DAC_SAS folder.
-    SAS_FOLDER=$(basename "$DAC_SAS_DIR")
-    ORIG_PARENT="${ORIG_INPUT_DIR%/*}"
-    if [ "$ORIG_PARENT" = "$ORIG_INPUT_DIR" ]; then
-        # No forward slash found; try Windows backslash separator
-        ORIG_PARENT="${ORIG_INPUT_DIR%\\*}"
-    fi
-    if [[ "$ORIG_INPUT_DIR" == *\\* ]] && [[ "$ORIG_INPUT_DIR" != */* ]]; then
-        NAME_DIR="${ORIG_PARENT}\\${SAS_FOLDER}"
-    else
-        NAME_DIR="${ORIG_PARENT}/${SAS_FOLDER}"
-    fi
-    echo "      File naming path set to: $NAME_DIR"
+    build_name_dir "$(basename "$DAC_SAS_DIR")"
 elif [ -d "$DAC_XPT_RENAMED_DIR" ] && [ "$(ls -A "$DAC_XPT_RENAMED_DIR" 2>/dev/null)" ]; then
     echo "      Note: XPT files with non-standard names were standardized"
     echo "      Standardized XPT datasets available in: $DAC_XPT_RENAMED_DIR"
@@ -417,18 +427,7 @@ elif [ -d "$DAC_XPT_RENAMED_DIR" ] && [ "$(ls -A "$DAC_XPT_RENAMED_DIR" 2>/dev/n
     SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
     # Build a naming path that preserves the original study context, same
     # approach as the DAC_SAS case above.
-    XPT_RENAME_FOLDER=$(basename "$DAC_XPT_RENAMED_DIR")
-    ORIG_PARENT="${ORIG_INPUT_DIR%/*}"
-    if [ "$ORIG_PARENT" = "$ORIG_INPUT_DIR" ]; then
-        # No forward slash found; try Windows backslash separator
-        ORIG_PARENT="${ORIG_INPUT_DIR%\\*}"
-    fi
-    if [[ "$ORIG_INPUT_DIR" == *\\* ]] && [[ "$ORIG_INPUT_DIR" != */* ]]; then
-        NAME_DIR="${ORIG_PARENT}\\${XPT_RENAME_FOLDER}"
-    else
-        NAME_DIR="${ORIG_PARENT}/${XPT_RENAME_FOLDER}"
-    fi
-    echo "      File naming path set to: $NAME_DIR"
+    build_name_dir "$(basename "$DAC_XPT_RENAMED_DIR")"
 fi
 
 # 2. Run SAS to XPT conversion
@@ -454,20 +453,7 @@ if [ -d "$DAC_SDTM_DIR" ] && [ "$(ls -A "$DAC_SDTM_DIR" 2>/dev/null)" ]; then
     # the DAC_SDTM folder name.  This means generated file names will still
     # reflect the original data location while correctly showing the conversion
     # step in the innermost folder segment.
-    XPT_FOLDER=$(basename "$DAC_SDTM_DIR")
-    ORIG_PARENT="${ORIG_INPUT_DIR%/*}"
-    if [ "$ORIG_PARENT" = "$ORIG_INPUT_DIR" ]; then
-        # No forward slash found; try Windows backslash separator
-        ORIG_PARENT="${ORIG_INPUT_DIR%\\*}"
-    fi
-    # Use the same separator style as the original input path so that
-    # the SAS %scan calls parse path segments correctly.
-    if [[ "$ORIG_INPUT_DIR" == *\\* ]] && [[ "$ORIG_INPUT_DIR" != */* ]]; then
-        NAME_DIR="${ORIG_PARENT}\\${XPT_FOLDER}"
-    else
-        NAME_DIR="${ORIG_PARENT}/${XPT_FOLDER}"
-    fi
-    echo "      File naming path set to: $NAME_DIR"
+    build_name_dir "$(basename "$DAC_SDTM_DIR")"
 fi
 
 # 3. Run SAS to CSV conversion
@@ -531,19 +517,19 @@ echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $OUTPUT_DIR/libra
 # not exist (e.g. timezone or clock-skew edge case).
 NAMING_DIR="${NAME_DIR:-$INPUT_DIR}"
 # Normalize path separators to forward slash and split into non-empty segments
-_norm="${NAMING_DIR//\\//}"
-IFS='/' read -ra _segs <<< "$_norm"
-_clean=()
-for _s in "${_segs[@]}"; do [ -n "$_s" ] && _clean+=("$_s"); done
-_n="${#_clean[@]}"
-[ "$_n" -ge 1 ] && _g_raw="${_clean[$((_n-1))]}"   || _g_raw=""
-[ "$_n" -ge 2 ] && _gg_raw="${_clean[$((_n-2))]}"  || _gg_raw=""
-[ "$_n" -ge 3 ] && _ggg_raw="${_clean[$((_n-3))]}" || _ggg_raw=""
-_G_PARENT=$(echo "$_g_raw"   | tr -cd '[:alnum:]')
-_GG_PARENT=$(echo "$_gg_raw"  | tr -cd '[:alnum:]')
-_GGG_PARENT=$(echo "$_ggg_raw" | tr -cd '[:alnum:]')
+normalized_path="${NAMING_DIR//\\//}"
+IFS='/' read -ra path_segments <<< "$normalized_path"
+clean_segments=()
+for segment in "${path_segments[@]}"; do [ -n "$segment" ] && clean_segments+=("$segment"); done
+segment_count="${#clean_segments[@]}"
+[ "$segment_count" -ge 1 ] && leaf_segment_raw="${clean_segments[$(( segment_count-1 ))]}"        || leaf_segment_raw=""
+[ "$segment_count" -ge 2 ] && parent_segment_raw="${clean_segments[$(( segment_count-2 ))]}"      || parent_segment_raw=""
+[ "$segment_count" -ge 3 ] && grandparent_segment_raw="${clean_segments[$(( segment_count-3 ))]}" || grandparent_segment_raw=""
+G_PARENT=$(echo "$leaf_segment_raw"        | tr -cd '[:alnum:]')
+GG_PARENT=$(echo "$parent_segment_raw"      | tr -cd '[:alnum:]')
+GGG_PARENT=$(echo "$grandparent_segment_raw" | tr -cd '[:alnum:]')
 DATE_STAMP=$(date +%Y%m%d)
-export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${_GGG_PARENT}_${_GG_PARENT}_${_G_PARENT}_${DATE_STAMP}.xlsx"
+export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${GGG_PARENT}_${GG_PARENT}_${G_PARENT}_${DATE_STAMP}.xlsx"
 
 # Verify file was created
 if [ -f "$VARIABLE_INFO_FILE" ]; then
