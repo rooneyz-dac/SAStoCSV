@@ -522,11 +522,13 @@ IFS='/' read -ra path_segments <<< "$normalized_path"
 clean_segments=()
 for segment in "${path_segments[@]}"; do [ -n "$segment" ] && clean_segments+=("$segment"); done
 segment_count="${#clean_segments[@]}"
-[ "$segment_count" -ge 1 ] && leaf_segment_raw="${clean_segments[$(( segment_count-1 ))]}"        || leaf_segment_raw=""
-[ "$segment_count" -ge 2 ] && parent_segment_raw="${clean_segments[$(( segment_count-2 ))]}"      || parent_segment_raw=""
+[ "$segment_count" -ge 1 ] && leaf_segment_raw="${clean_segments[$(( segment_count-1 ))]}" || leaf_segment_raw=""
+[ "$segment_count" -ge 2 ] && parent_segment_raw="${clean_segments[$(( segment_count-2 ))]}" || parent_segment_raw=""
 [ "$segment_count" -ge 3 ] && grandparent_segment_raw="${clean_segments[$(( segment_count-3 ))]}" || grandparent_segment_raw=""
-G_PARENT=$(echo "$leaf_segment_raw"        | tr -cd '[:alnum:]')
-GG_PARENT=$(echo "$parent_segment_raw"      | tr -cd '[:alnum:]')
+# G_PARENT = last/leaf segment; GG_PARENT = one level up; GGG_PARENT = two levels up.
+# This matches the ggg_parent/gg_parent/g_parent convention used in the SAS scripts.
+G_PARENT=$(echo "$leaf_segment_raw" | tr -cd '[:alnum:]')
+GG_PARENT=$(echo "$parent_segment_raw" | tr -cd '[:alnum:]')
 GGG_PARENT=$(echo "$grandparent_segment_raw" | tr -cd '[:alnum:]')
 DATE_STAMP=$(date +%Y%m%d)
 export VARIABLE_INFO_FILE="${OUTPUT_DIR}/DAC_Documents/variable_info_${GGG_PARENT}_${GG_PARENT}_${G_PARENT}_${DATE_STAMP}.xlsx"
