@@ -1,5 +1,12 @@
-1                                           The SAS System                 11:24 Tuesday, May 12, 2026
+1                                                          The SAS System                                14:44 Tuesday, May 12, 2026
 
+NOTE: Unable to open SASUSER.REGSTRY. WORK.REGSTRY will be opened instead.
+NOTE: All registry changes will be lost at the end of the session.
+
+WARNING: Unable to copy SASUSER registry to WORK registry. Because of this, you will not see registry customizations during this 
+         session.
+NOTE: Unable to open SASUSER.PROFILE. WORK.PROFILE will be opened instead.
+NOTE: All profile changes will be lost at the end of the session.
 NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
 NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
       Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
@@ -19,8 +26,8 @@ NOTE: Additional host information:
  X64_DSRV16 WIN 10.0.26100  Server
 
 NOTE: SAS initialization used:
-      real time           0.79 seconds
-      cpu time            0.46 seconds
+      real time           0.60 seconds
+      cpu time            0.42 seconds
       
 1          /*------------------------------------------------------------------*
 2          | PROGRAM NAME : rename_study_domains_cli20260320.sas
@@ -47,6 +54,8 @@ NOTE: SAS initialization used:
 23         | PURPOSE
 24         | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
 25         | input directory and standardizes their names by removing
+2                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 26         | study-specific suffixes (e.g., converting AE_PLACEBO to AE).
 27         | When any file requires renaming, ALL files of that type are
 28         | copied with standardized names to a new subfolder:
@@ -54,8 +63,6 @@ NOTE: SAS initialization used:
 30         |   - DAC_XPT for .xpt files
 31         | This ensures that subsequent pipeline scripts operate on a
 32         | complete, consistently named set of datasets.
-2                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 33         |
 34         | Naming rule: the standard name is the portion of the dataset name
 35         | before the first underscore.  E.g.:
@@ -76,10 +83,10 @@ NOTE: SAS initialization used:
 50         |
 51         | OUTPUT STRUCTURE:
 52         |   output_directory\
-53         |   ├── DAC_SAS\    - Standardized SAS7BDAT datasets
-54         |   │                 (created only when any .sas7bdat file has
-55         |   │                  a non-standard suffix)
-56         |   └── DAC_XPT\   - Standardized XPT datasets
+53         |   +-- DAC_SAS\    - Standardized SAS7BDAT datasets
+54         |   �                 (created only when any .sas7bdat file has
+55         |   �                  a non-standard suffix)
+56         |   +-- DAC_XPT\   - Standardized XPT datasets
 57         |                     (created only when any .xpt file has
 58         |                      a non-standard suffix)
 59         *------------------------------------------------------------------*
@@ -103,6 +110,8 @@ NOTE: SAS initialization used:
 77         |       -sysin rename_study_domains_cli20260320.sas
 78         |
 79         | Standardize XPT dataset names:
+3                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 80         |   sas -sysparm "C:\data\xpt_files|C:\data\output"
 81         |       -sysin rename_study_domains_cli20260320.sas
 82         *------------------------------------------------------------------*/
@@ -110,8 +119,6 @@ NOTE: SAS initialization used:
 84         /* ----------------------------------------------------------------
 85            Helper macro: copy one XPT file to DAC_XPT with a standardized
 86            member name.  Called via %nrstr() inside a DATA step CALL EXECUTE
-3                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 87            so that each file is processed sequentially after the driving
 88            DATA step completes.
 89         
@@ -159,6 +166,8 @@ NOTE: SAS initialization used:
 131                /* Clean up temporary WORK dataset */
 132                proc datasets lib=work nolist;
 133                    delete &_std_lc;
+4                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 134                quit;
 135            %end;
 136            %else %do;
@@ -166,8 +175,6 @@ NOTE: SAS initialization used:
 138                libname _xoutlib xport "&outpath";
 139                proc copy in=_xinlib out=_xoutlib; run;
 140                libname _xinlib  clear;
-4                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 141                libname _xoutlib clear;
 142            %end;
 143        
@@ -215,6 +222,8 @@ NOTE: SAS initialization used:
 185        
 186            data _work_sas;
 187                infile _sas7b truncover;
+5                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 188                input filename $256.;
 189                if filename = '' then delete;
 190                length dsname $32 standard_name $32;
@@ -222,8 +231,6 @@ NOTE: SAS initialization used:
 192                standard_name = upcase(scan(dsname,   1, '_'));
 193                needs_rename  = (dsname ne standard_name);
 194            run;
-5                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 195        
 196            filename _sas7b clear;
 197        
@@ -233,7 +240,7 @@ NOTE: SAS initialization used:
 201                    where needs_rename = 1;
 202            quit;
 203        
-204            %put NOTE: Found &sas_total SAS7BDAT file(s); &sas_rename_count require renaming.;
+204            %put NOTE: Found &sas_total SAS7BDAT file(s), &sas_rename_count require renaming.;
 205        
 206            %if &sas_total > 0 and &sas_rename_count > 0 %then %do;
 207        
@@ -271,6 +278,8 @@ NOTE: SAS initialization used:
 239                proc datasets lib=work nolist; delete _work_sas_dups; quit;
 240        
 241                %if &sas_rename_count > 0 %then %do;
+6                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 242        
 243                    /* Create DAC_SAS output directory if needed */
 244                    %let dac_sas_dir   = &outdir\DAC_SAS;
@@ -278,8 +287,6 @@ NOTE: SAS initialization used:
 246        
 247                    %if &dac_sas_exist = 0 %then %do;
 248                        %put NOTE: Creating directory &dac_sas_dir;
-6                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 249                        %let _rc = %sysfunc(dcreate(DAC_SAS, &outdir));
 250                        %if &_rc = %then %do;
 251                            %put ERROR: Failed to create directory &dac_sas_dir;
@@ -327,6 +334,8 @@ NOTE: SAS initialization used:
 293                %end; /* sas_rename_count > 0 after dedup */
 294        
 295            %end; /* sas_total > 0 and sas_rename_count > 0 */
+7                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 296            %else %if &sas_total > 0 %then %do;
 297                %put NOTE: All &sas_total SAS7BDAT file(s) already have standard names. No DAC_SAS
 297      ! folder created.;
@@ -334,8 +343,6 @@ NOTE: SAS initialization used:
 299        
 300            proc datasets lib=work nolist; delete _work_sas; quit;
 301        
-7                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 302        
 303            /* ============================================================
 304               PART 2: Process XPT files
@@ -365,7 +372,7 @@ NOTE: SAS initialization used:
 328                    where needs_rename = 1;
 329            quit;
 330        
-331            %put NOTE: Found &xpt_total XPT file(s); &xpt_rename_count require renaming.;
+331            %put NOTE: Found &xpt_total XPT file(s), &xpt_rename_count require renaming.;
 332        
 333            %if &xpt_total > 0 and &xpt_rename_count > 0 %then %do;
 334        
@@ -383,6 +390,8 @@ NOTE: SAS initialization used:
 346                    %put WARNING: Multiple XPT datasets map to the same standard name.;
 347                    %put WARNING: The following XPT datasets will be SKIPPED:;
 348                    data _null_;
+8                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 349                        set _work_xpt_dups;
 350                        put "  Standard name '" standard_name +(-1)
 351                            "' has " n "conflicting source datasets.";
@@ -390,8 +399,6 @@ NOTE: SAS initialization used:
 353                    proc sql noprint;
 354                        delete from _work_xpt
 355                        where standard_name in (select standard_name from _work_xpt_dups);
-8                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 356                    quit;
 357                    proc sql noprint;
 358                        select count(*) into :xpt_total        trimmed from _work_xpt;
@@ -439,6 +446,8 @@ NOTE: SAS initialization used:
 400        
 401            %end; /* xpt_total > 0 and xpt_rename_count > 0 */
 402            %else %if &xpt_total > 0 %then %do;
+9                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
 403                %put NOTE: All &xpt_total XPT file(s) already have standard names. No DAC_XPT
 403      ! folder created.;
 404            %end;
@@ -446,8 +455,6 @@ NOTE: SAS initialization used:
 406            proc datasets lib=work nolist; delete _work_xpt; quit;
 407        
 408            %put NOTE: [rename_study_domains] Processing complete.;
-9                                           The SAS System                 11:24 Tuesday, May 12, 2026
-
 409        
 410        %mend rename_study_domains;
 411        
@@ -465,13 +472,13 @@ NOTE: The infile _SAS7B is:
       "C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM\*.sas7bdat" 2>nul,
       RECFM=V,LRECL=32767
 
-NOTE: 55 records were read from the infile _SAS7B.
-      The minimum record length was 11.
-      The maximum record length was 15.
-NOTE: The data set WORK._WORK_SAS has 55 observations and 4 variables.
+NOTE: 37 records were read from the infile _SAS7B.
+      The minimum record length was 24.
+      The maximum record length was 28.
+NOTE: The data set WORK._WORK_SAS has 37 observations and 4 variables.
 NOTE: DATA statement used (Total process time):
-      real time           0.12 seconds
-      cpu time            0.01 seconds
+      real time           0.13 seconds
+      cpu time            0.03 seconds
       
 
 NOTE: Fileref _SAS7B has been deassigned.
@@ -480,55 +487,86 @@ NOTE: PROCEDURE SQL used (Total process time):
       cpu time            0.00 seconds
       
 
-NOTE: Found 55 SAS7BDAT file(s)
+NOTE: Found 37 SAS7BDAT file(s), 37 require renaming.
+NOTE: Table WORK._WORK_SAS_DUPS created, with 1 rows and 2 columns.
 
-NOTE: Line generated by the macro variable "SAS_RENAME_COUNT".
-412         0
-            _
-            180
-NOTE: All 55 SAS7BDAT file(s) already have standard names. No DAC_SAS folder created.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
 
-ERROR 180-322: Statement is not valid or it is used out of proper order.
+WARNING: Multiple SAS datasets map to the same standard name.
+WARNING: The following datasets will be SKIPPED to avoid overwriting:
 
-NOTE: SAS set option OBS=0 and will continue to check statements. 
-      This might cause NOTE: No observations in data set.
+  Standard name 'BERKELEY' has 37 conflicting source datasets.
+NOTE: There were 1 observations read from the data set WORK._WORK_SAS_DUPS.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+10                                          The SAS System                 14:44 Tuesday, May 12, 2026
+
+      cpu time            0.00 seconds
+      
+
+NOTE: 37 rows were deleted from WORK._WORK_SAS.
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: Deleting WORK._WORK_SAS_DUPS (memtype=DATA).
 NOTE: PROCEDURE DATASETS used (Total process time):
       real time           0.03 seconds
       cpu time            0.03 seconds
       
 
 
-NOTE: The data set WORK._WORK_XPT has 0 observations and 6 variables.
-NOTE: DATA statement used (Total process time):
+NOTE: Deleting WORK._WORK_SAS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
       real time           0.00 seconds
       cpu time            0.00 seconds
-10                                          The SAS System                 11:24 Tuesday, May 12, 2026
+      
 
+
+NOTE: The infile _XPTLST is:
+      Unnamed Pipe Access Device,
+      
+      PROCESS=dir /b 
+      "C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM\*.xpt" 2>nul,
+      RECFM=V,LRECL=32767
+
+NOTE: 0 records were read from the infile _XPTLST.
+NOTE: The data set WORK._WORK_XPT has 0 observations and 6 variables.
+NOTE: DATA statement used (Total process time):
+      real time           0.10 seconds
+      cpu time            0.00 seconds
       
 
 NOTE: Fileref _XPTLST has been deassigned.
-NOTE: PROC SQL set option NOEXEC and will continue to check the syntax of statements.
-NOTE: Statement not executed due to NOEXEC option.
-NOTE: Statement not executed due to NOEXEC option.
-NOTE: The SAS System stopped processing this step because of errors.
 NOTE: PROCEDURE SQL used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
+      real time           0.01 seconds
+      cpu time            0.00 seconds
       
-WARNING: Apparent symbolic reference XPT_TOTAL not resolved.
-NOTE: Found &xpt_total XPT file(s)
-WARNING: Apparent symbolic reference XPT_RENAME_COUNT not resolved.
-WARNING: Apparent symbolic reference XPT_TOTAL not resolved.
-ERROR: A character operand was found in the %EVAL function or %IF condition where a numeric operand 
-       is required. The condition was: &xpt_total > 0 and &xpt_rename_count > 0 
-WARNING: Apparent symbolic reference XPT_RENAME_COUNT not resolved.
-ERROR: The macro RENAME_STUDY_DOMAINS will stop executing.
 
+NOTE: Found 0 XPT file(s), 0 require renaming.
 
-ERROR: Errors printed on pages 9,10.
+NOTE: Deleting WORK._WORK_XPT (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+11                                          The SAS System                 14:44 Tuesday, May 12, 2026
 
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: [rename_study_domains] Processing complete.
 NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
 NOTE: The SAS System used:
-      real time           1.07 seconds
-      cpu time            0.59 seconds
+      real time           1.00 seconds
+      cpu time            0.54 seconds
       
