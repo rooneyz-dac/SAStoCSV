@@ -403,6 +403,36 @@ snapshot_output() {
     find "$OUTPUT_DIR" -type f ! -name "pipeline_change_log.txt" 2>/dev/null | sort
 }
 
+# Extract the standard domain name from a dataset filename stem.
+# Standard name = last underscore-delimited token (uppercased), or the stem
+# itself when it contains no underscore.
+#   $1 = filename stem (no extension), any case
+# Prints the standard name in uppercase.
+_std_name_from_stem() {
+    local stem_upper
+    stem_upper=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+    echo "$stem_upper" | rev | cut -d_ -f1 | rev
+}
+
+# Build rename-detection notes for a set of input files.
+# Prints one "Renamed: <orig> -> <std>" line per file that needed renaming.
+#   $1 = source directory to scan
+#   $2 = file extension without leading dot (sas7bdat or xpt)
+_detect_renames() {
+    local src_dir="$1"
+    local ext="$2"
+    while IFS= read -r orig_file; do
+        local orig_stem std_upper orig_upper std_lower
+        orig_stem=$(basename "$orig_file" ".$ext")
+        orig_upper=$(echo "$orig_stem" | tr '[:lower:]' '[:upper:]')
+        std_upper=$(_std_name_from_stem "$orig_stem")
+        if [ "$orig_upper" != "$std_upper" ]; then
+            std_lower=$(echo "$std_upper" | tr '[:upper:]' '[:lower:]')
+            printf "Renamed: %s.%s  ->  %s.%s\n" "$orig_stem" "$ext" "$std_lower" "$ext"
+        fi
+    done < <(find "$src_dir" -maxdepth 1 -name "*.$ext" 2>/dev/null | sort)
+}
+
 # Append one pipeline step's changes to the change log.
 #   $1 = step label  (e.g. "1/7")
 #   $2 = script name (e.g. "rename_study_domains_cli20260320.sas")
@@ -416,13 +446,16 @@ log_step_changes() {
     local timestamp
     timestamp=$(date "+%Y-%m-%d %H:%M:%S")
 
-    # Compute new files (present in after-snapshot but not in before-snapshot)
+    # Compute new files (present in after-snapshot but not in before-snapshot).
+    # Both inputs come from snapshot_output() which already sorts; no second
+    # sort is needed.  grep . filters out any stray empty lines so that an
+    # empty before-snapshot does not confuse comm.
     local after_snapshot
     after_snapshot=$(snapshot_output)
     local new_files
     new_files=$(comm -23 \
-        <(echo "$after_snapshot"  | grep . | sort) \
-        <(echo "$before_snapshot" | grep . | sort) 2>/dev/null) || true
+        <(echo "$after_snapshot"  | grep .) \
+        <(echo "$before_snapshot" | grep .) 2>/dev/null) || true
 
     {
         printf "\n"
@@ -677,15 +710,7 @@ if [ -d "$DAC_SAS_DIR" ] && [ "$(ls -A "$DAC_SAS_DIR" 2>/dev/null)" ]; then
     # actual input is now the generated DAC_SAS folder.
     build_name_dir "$(basename "$DAC_SAS_DIR")"
     # Detect which SAS datasets were renamed for the change log
-    while IFS= read -r orig_file; do
-        orig_stem=$(basename "$orig_file" .sas7bdat)
-        orig_upper=$(echo "$orig_stem" | tr '[:lower:]' '[:upper:]')
-        std_upper=$(echo "$orig_upper" | rev | cut -d_ -f1 | rev)
-        if [ "$orig_upper" != "$std_upper" ]; then
-            std_lower=$(echo "$std_upper" | tr '[:upper:]' '[:lower:]')
-            _rename_notes="${_rename_notes}Renamed: ${orig_stem}.sas7bdat  ->  ${std_lower}.sas7bdat"$'\n'
-        fi
-    done < <(find "$ORIG_INPUT_DIR" -maxdepth 1 -name "*.sas7bdat" 2>/dev/null | sort)
+    _rename_notes=$(_detect_renames "$ORIG_INPUT_DIR" "sas7bdat")
 elif [ -d "$DAC_XPT_RENAMED_DIR" ] && [ "$(ls -A "$DAC_XPT_RENAMED_DIR" 2>/dev/null)" ]; then
     echo "      Note: XPT files with non-standard names were standardized"
     echo "      Standardized XPT datasets available in: $DAC_XPT_RENAMED_DIR"
@@ -696,15 +721,7 @@ elif [ -d "$DAC_XPT_RENAMED_DIR" ] && [ "$(ls -A "$DAC_XPT_RENAMED_DIR" 2>/dev/n
     # approach as the DAC_SAS case above.
     build_name_dir "$(basename "$DAC_XPT_RENAMED_DIR")"
     # Detect which XPT datasets were renamed for the change log
-    while IFS= read -r orig_file; do
-        orig_stem=$(basename "$orig_file" .xpt)
-        orig_upper=$(echo "$orig_stem" | tr '[:lower:]' '[:upper:]')
-        std_upper=$(echo "$orig_upper" | rev | cut -d_ -f1 | rev)
-        if [ "$orig_upper" != "$std_upper" ]; then
-            std_lower=$(echo "$std_upper" | tr '[:upper:]' '[:lower:]')
-            _rename_notes="${_rename_notes}Renamed: ${orig_stem}.xpt  ->  ${std_lower}.xpt"$'\n'
-        fi
-    done < <(find "$ORIG_INPUT_DIR" -maxdepth 1 -name "*.xpt" 2>/dev/null | sort)
+    _rename_notes=$(_detect_renames "$ORIG_INPUT_DIR" "xpt")
 fi
 log_step_changes "1/7" "rename_study_domains_cli20260320.sas" "$SNAP_0" "$_rename_notes"
 SNAP_1=$(snapshot_output)
