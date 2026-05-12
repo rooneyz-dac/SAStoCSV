@@ -448,8 +448,9 @@ log_step_changes() {
 
     # Compute new files (present in after-snapshot but not in before-snapshot).
     # Both inputs come from snapshot_output() which already sorts; no second
-    # sort is needed.  grep . filters out any stray empty lines so that an
-    # empty before-snapshot does not confuse comm.
+    # sort is needed.  grep . filters out any stray empty lines (e.g. a blank
+    # string produced when a snapshot variable is empty) so that comm does not
+    # misinterpret an empty before-snapshot as a file with a blank name.
     local after_snapshot
     after_snapshot=$(snapshot_output)
     local new_files
