@@ -6,7 +6,7 @@
 *------------------------------------------------------------------*
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2026-05-08
-| VERSION      : 1.1
+| VERSION      : 1.2
 *------------------------------------------------------------------*
 | VERSION UPDATES:
 | 2026-05-08: Initial CLI release (v1.0)
@@ -28,6 +28,12 @@
 |     using proc datasets change (same approach as original script)
 |   - Standard name derived with scan(memname, 1, '_') -- identical
 |     to the original script
+| 2026-05-12: Fix standard name extraction (v1.2)
+|   - Changed scan position from 1 to -1 so the domain name is taken
+|     from the LAST token after the final underscore (e.g.
+|     BERKELEY_AE -> AE).  Using position 1 caused all datasets to
+|     map to the study prefix (e.g. BERKELEY), triggering a duplicate-
+|     name collision for every dataset in the library.
 *------------------------------------------------------------------*
 | PURPOSE
 | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
@@ -41,9 +47,9 @@
 | complete, consistently named set of datasets.
 |
 | Naming rule: the standard name is the portion of the dataset name
-| before the first underscore (scan(memname, 1, '_')).  E.g.:
-|   AE_PLACEBO  -> AE
-|   DM_TRT      -> DM
+| after the last underscore (scan(memname, -1, '_')).  E.g.:
+|   BERKELEY_AE   -> AE
+|   BERKELEY_SUPPAE -> SUPPAE
 |   CM          -> CM  (unchanged; no folder created for this alone)
 |
 | 1.1: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
@@ -197,12 +203,14 @@
        member metadata via dictionary.tables */
     libname _inlib "&indir";
 
-    /* Build a table of datasets that need renaming (have a suffix) */
+    /* Build a table of datasets that need renaming (have a suffix).
+       Standard name = last token after the final underscore, e.g.
+       BERKELEY_AE -> AE, BERKELEY_SUPPAE -> SUPPAE. */
     proc sql noprint;
         create table _work_sas as
         select
             memname,
-            scan(memname, 1, '_') as standard_name length=32
+            scan(memname, -1, '_') as standard_name length=32
         from dictionary.tables
         where upcase(libname) = '_INLIB'
           and index(memname, '_') > 0;
@@ -314,7 +322,7 @@
         length dsname $32 standard_name $32
                xpt_in_path $512 xpt_out_path $512;
         dsname        = upcase(scan(filename, 1, '.'));
-        standard_name = upcase(scan(dsname,   1, '_'));
+        standard_name = upcase(scan(dsname,  -1, '_'));
         needs_rename  = (dsname ne standard_name);
         xpt_in_path   = "&indir\" || strip(filename);
         xpt_out_path  = "&outdir\DAC_XPT\" ||
