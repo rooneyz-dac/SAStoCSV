@@ -1,0 +1,572 @@
+1                                                          The SAS System                                14:44 Tuesday, May 12, 2026
+
+NOTE: Unable to open SASUSER.REGSTRY. WORK.REGSTRY will be opened instead.
+NOTE: All registry changes will be lost at the end of the session.
+
+WARNING: Unable to copy SASUSER registry to WORK registry. Because of this, you will not see registry customizations during this 
+         session.
+NOTE: Unable to open SASUSER.PROFILE. WORK.PROFILE will be opened instead.
+NOTE: All profile changes will be lost at the end of the session.
+NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
+NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
+      Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
+NOTE: This session is executing on the X64_DSRV16  platform.
+
+
+
+NOTE: Updated analytical products:
+      
+      SAS/STAT 14.3
+      SAS/ETS 14.3
+      SAS/IML 14.3
+      SAS/QC 14.3
+
+NOTE: Additional host information:
+
+ X64_DSRV16 WIN 10.0.26100  Server
+
+NOTE: SAS initialization used:
+      real time           0.60 seconds
+      cpu time            0.42 seconds
+      
+1          /*------------------------------------------------------------------*
+2          | PROGRAM NAME : rename_study_domains_cli20260320.sas
+3          | SHORT DESC   : Standardizes SAS and XPT dataset names by removing
+4          |                suffixes (e.g., AE_PLACEBO to AE) and placing
+5          |                renamed copies in DAC_SAS or DAC_XPT subfolders
+6          *------------------------------------------------------------------*
+7          | CREATED BY   : DAC Development Team
+8          | DATE CREATED : 2026-05-08
+9          | VERSION      : 1.0
+10         *------------------------------------------------------------------*
+11         | VERSION UPDATES:
+12         | 2026-05-08: Initial CLI release (v1.0)
+13         |   - Added SYSPARM parsing for input and output directories
+14         |   - Standardizes dataset names by keeping only the prefix before
+15         |     the first underscore (e.g., AE_PLACEBO -> AE)
+16         |   - Copies SAS7BDAT datasets to DAC_SAS subfolder when any file
+17         |     in the input directory has a non-standard (suffixed) name
+18         |   - Copies XPT datasets to DAC_XPT subfolder when any XPT file
+19         |     in the input directory has a non-standard name
+20         |   - Files without underscores are copied unchanged to the new
+21         |     folder so the folder is a complete, self-consistent set
+22         *------------------------------------------------------------------*
+23         | PURPOSE
+24         | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
+25         | input directory and standardizes their names by removing
+2                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+26         | study-specific suffixes (e.g., converting AE_PLACEBO to AE).
+27         | When any file requires renaming, ALL files of that type are
+28         | copied with standardized names to a new subfolder:
+29         |   - DAC_SAS for .sas7bdat files
+30         |   - DAC_XPT for .xpt files
+31         | This ensures that subsequent pipeline scripts operate on a
+32         | complete, consistently named set of datasets.
+33         |
+34         | Naming rule: the standard name is the portion of the dataset name
+35         | before the first underscore.  E.g.:
+36         |   AE_PLACEBO  -> AE
+37         |   DM_TRT      -> DM
+38         |   CM          -> CM  (unchanged; no folder created for this alone)
+39         |
+40         | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+41         | INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
+42         |                    files to be renamed
+43         | OUTPUT_DIRECTORY = Path to folder where DAC_SAS and/or DAC_XPT
+44         |                    subfolders will be created. Must exist prior
+45         |                    to execution.
+46         |
+47         | USAGE:
+48         |   sas -sysparm "input_directory|output_directory"
+49         |       -sysin rename_study_domains_cli20260320.sas
+50         |
+51         | OUTPUT STRUCTURE:
+52         |   output_directory\
+53         |   +-- DAC_SAS\    - Standardized SAS7BDAT datasets
+54         |   ¦                 (created only when any .sas7bdat file has
+55         |   ¦                  a non-standard suffix)
+56         |   +-- DAC_XPT\   - Standardized XPT datasets
+57         |                     (created only when any .xpt file has
+58         |                      a non-standard suffix)
+59         *------------------------------------------------------------------*
+60         | OPERATING SYSTEM COMPATIBILITY
+61         | SAS v9.4 or Higher: Yes
+62         | Windows:            Yes (uses DIR command for file listing)
+63         *------------------------------------------------------------------*
+64         | NOTES
+65         | - If two input files share the same standard name (e.g.,
+66         |   AE_PLACEBO and AE_TREATMENT both map to AE), a WARNING is
+67         |   issued and those files are skipped.  Resolve naming conflicts
+68         |   in the source data before running the pipeline.
+69         | - For XPT files the script queries the SAS transport library to
+70         |   obtain the actual member name inside each file.  SAS XPT
+71         |   format limits member names to 8 characters.
+72         *------------------------------------------------------------------*
+73         | EXAMPLES
+74         |
+75         | Standardize SAS dataset names:
+76         |   sas -sysparm "C:\data\input|C:\data\output"
+77         |       -sysin rename_study_domains_cli20260320.sas
+78         |
+79         | Standardize XPT dataset names:
+3                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+80         |   sas -sysparm "C:\data\xpt_files|C:\data\output"
+81         |       -sysin rename_study_domains_cli20260320.sas
+82         *------------------------------------------------------------------*/
+83         
+84         /* ----------------------------------------------------------------
+85            Helper macro: copy one XPT file to DAC_XPT with a standardized
+86            member name.  Called via %nrstr() inside a DATA step CALL EXECUTE
+87            so that each file is processed sequentially after the driving
+88            DATA step completes.
+89         
+90            Parameters:
+91              inpath        - full path to the source .xpt file
+92              outpath       - full path for the destination .xpt file
+93              standard_name - desired (standardized) SAS dataset name
+94         ---------------------------------------------------------------- */
+95         %macro _copy_xpt_file(inpath=, outpath=, standard_name=);
+96         
+97             /* Open source XPT with SAS transport engine */
+98             libname _xinlib xport "&inpath";
+99         
+100            /* Get the actual member name stored inside the XPT file */
+101            proc sql noprint;
+102                select memname into :_xpt_memname trimmed
+103                from dictionary.tables
+104                where libname = '_XINLIB';
+105            quit;
+106        
+107            %if %length(&_xpt_memname) = 0 %then %do;
+108                %put WARNING: No dataset found in XPT file: &inpath -- skipping.;
+109                libname _xinlib clear;
+110                %return;
+111            %end;
+112        
+113            %let _xpt_memname_lc = %lowcase(&_xpt_memname);
+114            %let _std_lc         = %lowcase(&standard_name);
+115        
+116            %if %upcase(&_xpt_memname) ne %upcase(&standard_name) %then %do;
+117                /* Copy internal dataset to WORK under the standard name */
+118                data work.&_std_lc;
+119                    set _xinlib.&_xpt_memname_lc;
+120                run;
+121        
+122                libname _xinlib clear;
+123        
+124                /* Write the WORK dataset to the new XPT file */
+125                libname _xoutlib xport "&outpath";
+126                proc copy in=work out=_xoutlib;
+127                    select &_std_lc;
+128                run;
+129                libname _xoutlib clear;
+130        
+131                /* Clean up temporary WORK dataset */
+132                proc datasets lib=work nolist;
+133                    delete &_std_lc;
+4                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+134                quit;
+135            %end;
+136            %else %do;
+137                /* Name already matches standard; copy file as-is */
+138                libname _xoutlib xport "&outpath";
+139                proc copy in=_xinlib out=_xoutlib; run;
+140                libname _xinlib  clear;
+141                libname _xoutlib clear;
+142            %end;
+143        
+144        %mend _copy_xpt_file;
+145        
+146        
+147        /* ================================================================
+148           Main macro
+149        ================================================================ */
+150        %macro rename_study_domains;
+151        
+152            %let sysparm_value = &sysparm;
+153            %put NOTE: [rename_study_domains] Raw SYSPARM = &sysparm_value;
+154        
+155            /* ---- Parse SYSPARM: input_dir|output_dir ---- */
+156            %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+157            %if &pipe_pos > 0 %then %do;
+158                %let indir  = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+159                %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+160            %end;
+161            %else %do;
+162                %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+163                %abort;
+164            %end;
+165        
+166            %put NOTE: [rename_study_domains] Input Directory  = &indir;
+167            %put NOTE: [rename_study_domains] Output Directory = &outdir;
+168        
+169            /* ---- Validate directories ---- */
+170            %if %sysfunc(fileexist(&indir))  = 0 %then %do;
+171                %put ERROR: Input directory does not exist: &indir;
+172                %abort;
+173            %end;
+174            %if %sysfunc(fileexist(&outdir)) = 0 %then %do;
+175                %put ERROR: Output directory does not exist: &outdir;
+176                %abort;
+177            %end;
+178        
+179        
+180            /* ============================================================
+181               PART 1: Process SAS7BDAT files
+182               ============================================================ */
+183        
+184            filename _sas7b pipe "dir /b ""&indir\*.sas7bdat"" 2>nul";
+185        
+186            data _work_sas;
+187                infile _sas7b truncover;
+5                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+188                input filename $256.;
+189                if filename = '' then delete;
+190                length dsname $32 standard_name $32;
+191                dsname        = upcase(scan(filename, 1, '.'));
+192                standard_name = upcase(scan(dsname,   1, '_'));
+193                needs_rename  = (dsname ne standard_name);
+194            run;
+195        
+196            filename _sas7b clear;
+197        
+198            proc sql noprint;
+199                select count(*) into :sas_total        trimmed from _work_sas;
+200                select count(*) into :sas_rename_count trimmed from _work_sas
+201                    where needs_rename = 1;
+202            quit;
+203        
+204            %put NOTE: Found &sas_total SAS7BDAT file(s), &sas_rename_count require renaming.;
+205        
+206            %if &sas_total > 0 and &sas_rename_count > 0 %then %do;
+207        
+208                /* Check for duplicate standard names and warn/exclude */
+209                proc sql noprint;
+210                    create table _work_sas_dups as
+211                    select standard_name, count(*) as n
+212                    from _work_sas
+213                    group by standard_name
+214                    having count(*) > 1;
+215                    select count(*) into :sas_dup_count trimmed from _work_sas_dups;
+216                quit;
+217        
+218                %if &sas_dup_count > 0 %then %do;
+219                    %put WARNING: Multiple SAS datasets map to the same standard name.;
+220                    %put WARNING: The following datasets will be SKIPPED to avoid overwriting:;
+221                    data _null_;
+222                        set _work_sas_dups;
+223                        put "  Standard name '" standard_name +(-1)
+224                            "' has " n "conflicting source datasets.";
+225                    run;
+226                    /* Exclude files with duplicate standard names */
+227                    proc sql noprint;
+228                        delete from _work_sas
+229                        where standard_name in (select standard_name from _work_sas_dups);
+230                    quit;
+231                    /* Re-count after exclusion */
+232                    proc sql noprint;
+233                        select count(*) into :sas_total        trimmed from _work_sas;
+234                        select count(*) into :sas_rename_count trimmed from _work_sas
+235                            where needs_rename = 1;
+236                    quit;
+237                %end;
+238        
+239                proc datasets lib=work nolist; delete _work_sas_dups; quit;
+240        
+241                %if &sas_rename_count > 0 %then %do;
+6                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+242        
+243                    /* Create DAC_SAS output directory if needed */
+244                    %let dac_sas_dir   = &outdir\DAC_SAS;
+245                    %let dac_sas_exist = %sysfunc(fileexist(&dac_sas_dir));
+246        
+247                    %if &dac_sas_exist = 0 %then %do;
+248                        %put NOTE: Creating directory &dac_sas_dir;
+249                        %let _rc = %sysfunc(dcreate(DAC_SAS, &outdir));
+250                        %if &_rc = %then %do;
+251                            %put ERROR: Failed to create directory &dac_sas_dir;
+252                            %abort;
+253                        %end;
+254                    %end;
+255                    %else %do;
+256                        %put NOTE: Directory &dac_sas_dir already exists.;
+257                    %end;
+258        
+259                    libname _inlib  "&indir";
+260                    libname _outdac "&dac_sas_dir";
+261        
+262                    /* Copy each SAS dataset to DAC_SAS, renaming those with suffixes.
+263                       Strategy: copy to DAC_SAS with original name, then rename the
+264                       copy in DAC_SAS to the standard name.  The original input files
+265                       are never modified. */
+266                    data _null_;
+267                        set _work_sas;
+268                        length dsname_lc $32 std_lc $32;
+269                        dsname_lc = lowcase(dsname);
+270                        std_lc    = lowcase(standard_name);
+271        
+272                        /* Copy dataset to DAC_SAS */
+273                        call execute(
+274                            'proc copy in=_inlib out=_outdac memtype=data; select ' ||
+275                            strip(dsname_lc) || '; run;'
+276                        );
+277        
+278                        /* Rename the copy in DAC_SAS if a suffix was present */
+279                        if needs_rename then do;
+280                            call execute(
+281                                'proc datasets library=_outdac nolist; change ' ||
+282                                strip(dsname_lc) || '=' || strip(std_lc) || '; quit;'
+283                            );
+284                        end;
+285                    run;
+286        
+287                    libname _inlib  clear;
+288                    libname _outdac clear;
+289        
+290                    %put NOTE: SAS dataset standardization complete.;
+291                    %put NOTE: Standardized SAS files are in: &dac_sas_dir;
+292        
+293                %end; /* sas_rename_count > 0 after dedup */
+294        
+295            %end; /* sas_total > 0 and sas_rename_count > 0 */
+7                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+296            %else %if &sas_total > 0 %then %do;
+297                %put NOTE: All &sas_total SAS7BDAT file(s) already have standard names. No DAC_SAS
+297      ! folder created.;
+298            %end;
+299        
+300            proc datasets lib=work nolist; delete _work_sas; quit;
+301        
+302        
+303            /* ============================================================
+304               PART 2: Process XPT files
+305               ============================================================ */
+306        
+307            filename _xptlst pipe "dir /b ""&indir\*.xpt"" 2>nul";
+308        
+309            data _work_xpt;
+310                infile _xptlst truncover;
+311                input filename $256.;
+312                if filename = '' then delete;
+313                length dsname $32 standard_name $32
+314                       xpt_in_path $512 xpt_out_path $512;
+315                dsname        = upcase(scan(filename, 1, '.'));
+316                standard_name = upcase(scan(dsname,   1, '_'));
+317                needs_rename  = (dsname ne standard_name);
+318                xpt_in_path   = "&indir\" || strip(filename);
+319                xpt_out_path  = "&outdir\DAC_XPT\" ||
+320                                strip(lowcase(standard_name)) || '.xpt';
+321            run;
+322        
+323            filename _xptlst clear;
+324        
+325            proc sql noprint;
+326                select count(*) into :xpt_total        trimmed from _work_xpt;
+327                select count(*) into :xpt_rename_count trimmed from _work_xpt
+328                    where needs_rename = 1;
+329            quit;
+330        
+331            %put NOTE: Found &xpt_total XPT file(s), &xpt_rename_count require renaming.;
+332        
+333            %if &xpt_total > 0 and &xpt_rename_count > 0 %then %do;
+334        
+335                /* Check for duplicate standard names and warn/exclude */
+336                proc sql noprint;
+337                    create table _work_xpt_dups as
+338                    select standard_name, count(*) as n
+339                    from _work_xpt
+340                    group by standard_name
+341                    having count(*) > 1;
+342                    select count(*) into :xpt_dup_count trimmed from _work_xpt_dups;
+343                quit;
+344        
+345                %if &xpt_dup_count > 0 %then %do;
+346                    %put WARNING: Multiple XPT datasets map to the same standard name.;
+347                    %put WARNING: The following XPT datasets will be SKIPPED:;
+348                    data _null_;
+8                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+349                        set _work_xpt_dups;
+350                        put "  Standard name '" standard_name +(-1)
+351                            "' has " n "conflicting source datasets.";
+352                    run;
+353                    proc sql noprint;
+354                        delete from _work_xpt
+355                        where standard_name in (select standard_name from _work_xpt_dups);
+356                    quit;
+357                    proc sql noprint;
+358                        select count(*) into :xpt_total        trimmed from _work_xpt;
+359                        select count(*) into :xpt_rename_count trimmed from _work_xpt
+360                            where needs_rename = 1;
+361                    quit;
+362                %end;
+363        
+364                proc datasets lib=work nolist; delete _work_xpt_dups; quit;
+365        
+366                %if &xpt_rename_count > 0 %then %do;
+367        
+368                    /* Create DAC_XPT output directory if needed */
+369                    %let dac_xpt_dir   = &outdir\DAC_XPT;
+370                    %let dac_xpt_exist = %sysfunc(fileexist(&dac_xpt_dir));
+371        
+372                    %if &dac_xpt_exist = 0 %then %do;
+373                        %put NOTE: Creating directory &dac_xpt_dir;
+374                        %let _rc = %sysfunc(dcreate(DAC_XPT, &outdir));
+375                        %if &_rc = %then %do;
+376                            %put ERROR: Failed to create directory &dac_xpt_dir;
+377                            %abort;
+378                        %end;
+379                    %end;
+380                    %else %do;
+381                        %put NOTE: Directory &dac_xpt_dir already exists.;
+382                    %end;
+383        
+384                    /* Generate a call to %_copy_xpt_file for each XPT file.
+385                       Using %nrstr prevents premature macro resolution of the
+386                       parameter values inside the DATA step. */
+387                    data _null_;
+388                        set _work_xpt;
+389                        call execute(
+390                            '%_copy_xpt_file(inpath=' || strip(xpt_in_path)   ||
+391                            ', outpath='              || strip(xpt_out_path)  ||
+392                            ', standard_name='        || strip(standard_name) || ')'
+393                        );
+394                    run;
+395        
+396                    %put NOTE: XPT dataset standardization complete.;
+397                    %put NOTE: Standardized XPT files are in: &dac_xpt_dir;
+398        
+399                %end; /* xpt_rename_count > 0 after dedup */
+400        
+401            %end; /* xpt_total > 0 and xpt_rename_count > 0 */
+402            %else %if &xpt_total > 0 %then %do;
+9                                           The SAS System                 14:44 Tuesday, May 12, 2026
+
+403                %put NOTE: All &xpt_total XPT file(s) already have standard names. No DAC_XPT
+403      ! folder created.;
+404            %end;
+405        
+406            proc datasets lib=work nolist; delete _work_xpt; quit;
+407        
+408            %put NOTE: [rename_study_domains] Processing complete.;
+409        
+410        %mend rename_study_domains;
+411        
+412        %rename_study_domains;
+NOTE: [rename_study_domains] Raw SYSPARM = 
+C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM|E:\output
+NOTE: [rename_study_domains] Input Directory  = 
+C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM
+NOTE: [rename_study_domains] Output Directory = E:\output
+
+NOTE: The infile _SAS7B is:
+      Unnamed Pipe Access Device,
+      
+      PROCESS=dir /b 
+      "C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM\*.sas7bdat" 2>nul,
+      RECFM=V,LRECL=32767
+
+NOTE: 37 records were read from the infile _SAS7B.
+      The minimum record length was 24.
+      The maximum record length was 28.
+NOTE: The data set WORK._WORK_SAS has 37 observations and 4 variables.
+NOTE: DATA statement used (Total process time):
+      real time           0.13 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: Fileref _SAS7B has been deassigned.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Found 37 SAS7BDAT file(s), 37 require renaming.
+NOTE: Table WORK._WORK_SAS_DUPS created, with 1 rows and 2 columns.
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+WARNING: Multiple SAS datasets map to the same standard name.
+WARNING: The following datasets will be SKIPPED to avoid overwriting:
+
+  Standard name 'BERKELEY' has 37 conflicting source datasets.
+NOTE: There were 1 observations read from the data set WORK._WORK_SAS_DUPS.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+10                                          The SAS System                 14:44 Tuesday, May 12, 2026
+
+      cpu time            0.00 seconds
+      
+
+NOTE: 37 rows were deleted from WORK._WORK_SAS.
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: Deleting WORK._WORK_SAS_DUPS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+
+NOTE: Deleting WORK._WORK_SAS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: The infile _XPTLST is:
+      Unnamed Pipe Access Device,
+      
+      PROCESS=dir /b 
+      "C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM\*.xpt" 2>nul,
+      RECFM=V,LRECL=32767
+
+NOTE: 0 records were read from the infile _XPTLST.
+NOTE: The data set WORK._WORK_XPT has 0 observations and 6 variables.
+NOTE: DATA statement used (Total process time):
+      real time           0.10 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Fileref _XPTLST has been deassigned.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Found 0 XPT file(s), 0 require renaming.
+
+NOTE: Deleting WORK._WORK_XPT (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+11                                          The SAS System                 14:44 Tuesday, May 12, 2026
+
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: [rename_study_domains] Processing complete.
+NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
+NOTE: The SAS System used:
+      real time           1.00 seconds
+      cpu time            0.54 seconds
+      
