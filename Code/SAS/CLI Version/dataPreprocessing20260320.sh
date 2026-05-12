@@ -94,7 +94,9 @@
 #   ├── DAC_Logs/             - SAS log and listing files
 #   │   ├── *.log             - SAS execution logs (only when --log=1)
 #   │   └── *.lst             - SAS listing files (only when --lst=1)
-#   └── pipeline_vars.env     - Environment variables for chaining scripts
+#   ├── pipeline_vars.env     - Environment variables for chaining scripts
+#   └── pipeline_change_log.txt - Detailed log of all files created/changed,
+#                               sorted by the script that caused each change
 #
 # Requirements:
 #   - SAS Foundation 9.4 installed at default location
@@ -112,7 +114,7 @@
 #
 # Author: DAC Development Team
 # Created: 2025-11-22
-# Version: 1.1
+# Version: 1.3
 #
 # Version History:
 #   1.0 (2025-11-22): Initial release
@@ -129,6 +131,12 @@
 #       filenames always reflect the original input path.
 #     - Fixed VARIABLE_INFO_FILE prediction to use all three path segments
 #       (ggg_parent_gg_parent_g_parent) instead of only the leaf segment.
+#   1.3 (2026-05-12): Added detailed pipeline change log
+#     - Generates pipeline_change_log.txt in the output directory on every run.
+#     - Records which files each script created, with timestamps.
+#     - Entries are sorted by the script/step that caused each change.
+#     - Rename step annotates which datasets were renamed and to what names.
+#     - XPT step annotates the conversion direction (SAS->XPT or XPT->SDTM).
 #
 # Notes:
 #   - Script exits on first error (set -e)
@@ -386,6 +394,95 @@ build_name_dir() {
     echo "      File naming path set to: $NAME_DIR"
 }
 
+# ── Change log helpers ───────────────────────────────────────────────────────
+
+# Capture a sorted snapshot of all regular files under OUTPUT_DIR.
+# The change log file itself is excluded so it never appears as a "new file"
+# in any step's diff.
+snapshot_output() {
+    find "$OUTPUT_DIR" -type f ! -name "pipeline_change_log.txt" 2>/dev/null | sort
+}
+
+# Extract the standard domain name from a dataset filename stem.
+# Standard name = last underscore-delimited token (uppercased), or the stem
+# itself when it contains no underscore.
+#   $1 = filename stem (no extension), any case
+# Prints the standard name in uppercase.
+_std_name_from_stem() {
+    local stem_upper
+    stem_upper=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+    echo "$stem_upper" | rev | cut -d_ -f1 | rev
+}
+
+# Build rename-detection notes for a set of input files.
+# Prints one "Renamed: <orig> -> <std>" line per file that needed renaming.
+#   $1 = source directory to scan
+#   $2 = file extension without leading dot (sas7bdat or xpt)
+_detect_renames() {
+    local src_dir="$1"
+    local ext="$2"
+    while IFS= read -r orig_file; do
+        local orig_stem std_upper orig_upper std_lower
+        orig_stem=$(basename "$orig_file" ".$ext")
+        orig_upper=$(echo "$orig_stem" | tr '[:lower:]' '[:upper:]')
+        std_upper=$(_std_name_from_stem "$orig_stem")
+        if [ "$orig_upper" != "$std_upper" ]; then
+            std_lower=$(echo "$std_upper" | tr '[:upper:]' '[:lower:]')
+            printf "Renamed: %s.%s  ->  %s.%s\n" "$orig_stem" "$ext" "$std_lower" "$ext"
+        fi
+    done < <(find "$src_dir" -maxdepth 1 -name "*.$ext" 2>/dev/null | sort)
+}
+
+# Append one pipeline step's changes to the change log.
+#   $1 = step label  (e.g. "1/7")
+#   $2 = script name (e.g. "rename_study_domains_cli20260320.sas")
+#   $3 = before-snapshot: sorted, newline-delimited list of file paths
+#   $4 = extra detail lines (optional; newline-delimited)
+log_step_changes() {
+    local step_label="$1"
+    local script_name="$2"
+    local before_snapshot="$3"
+    local extra_notes="$4"
+    local timestamp
+    timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+
+    # Compute new files (present in after-snapshot but not in before-snapshot).
+    # Both inputs come from snapshot_output() which already sorts; no second
+    # sort is needed.  grep . filters out any stray empty lines (e.g. a blank
+    # string produced when a snapshot variable is empty) so that comm does not
+    # misinterpret an empty before-snapshot as a file with a blank name.
+    local after_snapshot
+    after_snapshot=$(snapshot_output)
+    local new_files
+    new_files=$(comm -23 \
+        <(echo "$after_snapshot"  | grep .) \
+        <(echo "$before_snapshot" | grep .) 2>/dev/null) || true
+
+    {
+        printf "\n"
+        printf -- "-------------------------------------------------------\n"
+        printf "Step [%s]  Script: %s\n" "$step_label" "$script_name"
+        printf "Timestamp: %s\n" "$timestamp"
+        printf "\n"
+        printf "  Files Created:\n"
+        if [ -n "$new_files" ]; then
+            while IFS= read -r filepath; do
+                [ -z "$filepath" ] && continue
+                printf "    + %s\n" "${filepath#${OUTPUT_DIR}/}"
+            done <<< "$new_files"
+        else
+            printf "    (none)\n"
+        fi
+        if [ -n "$extra_notes" ]; then
+            printf "\n  Details:\n"
+            while IFS= read -r note; do
+                [ -z "$note" ] && continue
+                printf "    %s\n" "$note"
+            done <<< "$extra_notes"
+        fi
+    } >> "$CHANGE_LOG_FILE"
+}
+
 # Default values
 INPUT_DIR=""
 OUTPUT_DIR="E:\\output"
@@ -499,6 +596,22 @@ if [ ! -d "$DAC_LOGS_DIR" ]; then
     echo "Created logs directory: $DAC_LOGS_DIR"
 fi
 
+# Initialize the pipeline change log
+CHANGE_LOG_FILE="${OUTPUT_DIR}/pipeline_change_log.txt"
+{
+    echo "======================================================="
+    echo " Pipeline Change Log"
+    echo " Generated:  $(date '+%Y-%m-%d %H:%M:%S')"
+    echo " Input:      ${INPUT_DIR}"
+    echo " Output:     ${OUTPUT_DIR}"
+    echo " Trial:      ${TRIAL_NAME:-<not set yet>}"
+    echo "======================================================="
+    echo " Changes are recorded below, sorted by the script that"
+    echo " caused each change.  Each section shows the files"
+    echo " created during that pipeline step."
+    echo "======================================================="
+} > "$CHANGE_LOG_FILE"
+
 # Get script directory for finding SAS scripts and Python script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -568,6 +681,7 @@ echo "=========================================="
 
 # 1. Standardize dataset names (rename study-specific suffixes)
 echo "[1/7] Standardizing dataset names..."
+SNAP_0=$(snapshot_output)
 LOG_ARG_0=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/rename_domains.log" || echo "$NULL_DEVICE")
 SAS_PRINT_0=()
 if [ "$LST_ENABLED" = "1" ]; then
@@ -583,6 +697,7 @@ echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/ren
 DAC_SAS_DIR="${OUTPUT_DIR}/DAC_SAS"
 DAC_XPT_RENAMED_DIR="${OUTPUT_DIR}/DAC_XPT"
 
+_rename_notes=""
 if [ -d "$DAC_SAS_DIR" ] && [ "$(ls -A "$DAC_SAS_DIR" 2>/dev/null)" ]; then
     echo "      Note: SAS files with non-standard names were standardized"
     echo "      Standardized SAS datasets available in: $DAC_SAS_DIR"
@@ -595,6 +710,8 @@ if [ -d "$DAC_SAS_DIR" ] && [ "$(ls -A "$DAC_SAS_DIR" 2>/dev/null)" ]; then
     # the original ggg_parent and gg_parent path segments even though the
     # actual input is now the generated DAC_SAS folder.
     build_name_dir "$(basename "$DAC_SAS_DIR")"
+    # Detect which SAS datasets were renamed for the change log
+    _rename_notes=$(_detect_renames "$ORIG_INPUT_DIR" "sas7bdat")
 elif [ -d "$DAC_XPT_RENAMED_DIR" ] && [ "$(ls -A "$DAC_XPT_RENAMED_DIR" 2>/dev/null)" ]; then
     echo "      Note: XPT files with non-standard names were standardized"
     echo "      Standardized XPT datasets available in: $DAC_XPT_RENAMED_DIR"
@@ -604,7 +721,11 @@ elif [ -d "$DAC_XPT_RENAMED_DIR" ] && [ "$(ls -A "$DAC_XPT_RENAMED_DIR" 2>/dev/n
     # Build a naming path that preserves the original study context, same
     # approach as the DAC_SAS case above.
     build_name_dir "$(basename "$DAC_XPT_RENAMED_DIR")"
+    # Detect which XPT datasets were renamed for the change log
+    _rename_notes=$(_detect_renames "$ORIG_INPUT_DIR" "xpt")
 fi
+log_step_changes "1/7" "rename_study_domains_cli20260320.sas" "$SNAP_0" "$_rename_notes"
+SNAP_1=$(snapshot_output)
 
 # 2. Run SAS to XPT conversion
 echo "[2/7] Converting SAS datasets to XPT format..."
@@ -618,6 +739,7 @@ echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/sas
 
 # Check if XPT files were converted to SAS7BDAT (DAC_SDTM folder created)
 DAC_SDTM_DIR="${OUTPUT_DIR}/DAC_SDTM"
+_xpt_notes=""
 if [ -d "$DAC_SDTM_DIR" ] && [ "$(ls -A "$DAC_SDTM_DIR" 2>/dev/null)" ]; then
     echo "      Note: XPT files detected and converted to SAS7BDAT format"
     echo "      SDTM datasets available in: $DAC_SDTM_DIR"
@@ -630,7 +752,12 @@ if [ -d "$DAC_SDTM_DIR" ] && [ "$(ls -A "$DAC_SDTM_DIR" 2>/dev/null)" ]; then
     # reflect the original data location while correctly showing the conversion
     # step in the innermost folder segment.
     build_name_dir "$(basename "$DAC_SDTM_DIR")"
+    _xpt_notes="Conversion direction: XPT -> SAS7BDAT (input contained XPT files; SDTM datasets written to DAC_SDTM)"
+else
+    _xpt_notes="Conversion direction: SAS7BDAT -> XPT (XPT exports written to DAC_XPT)"
 fi
+log_step_changes "2/7" "SAStoXPTcli20260320.sas" "$SNAP_1" "$_xpt_notes"
+SNAP_2=$(snapshot_output)
 
 # 3. Run SAS to CSV conversion
 echo "[3/7] Converting SAS datasets to CSV..."
@@ -641,6 +768,8 @@ if [ "$LST_ENABLED" = "1" ]; then
 fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$LOG_ARG_2" "${SAS_PRINT_2[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/sas_to_csv.log")"
+log_step_changes "3/7" "SAStoCSVcli20260320.sas" "$SNAP_2"
+SNAP_3=$(snapshot_output)
 
 # 4. Generate variable information and capture output file location
 echo "[4/7] Generating variable information document..."
@@ -655,6 +784,8 @@ if [ -n "$NAME_DIR" ]; then
 fi
 "$SAS_EXE" -sysparm "$VAR_INFO_SYSPARM" -sysin "$SCRIPT_DIR/variable_info_cli20260320.sas" -log "$LOG_ARG_3" "${SAS_PRINT_3[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/variable_info.log")"
+log_step_changes "4/7" "variable_info_cli20260320.sas" "$SNAP_3"
+SNAP_4=$(snapshot_output)
 
 # 5. Generate data specifications
 echo "[5/7] Generating data specifications document..."
@@ -669,6 +800,8 @@ if [ "$LST_ENABLED" = "1" ]; then
 fi
 "$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$LOG_ARG_4" "${SAS_PRINT_4[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/data_specs.log")"
+log_step_changes "5/7" "data_specs_cli20260320.sas" "$SNAP_4"
+SNAP_5=$(snapshot_output)
 
 # 6. Generate library information
 echo "[6/7] Generating library information document..."
@@ -683,6 +816,8 @@ if [ -n "$NAME_DIR" ]; then
 fi
 "$SAS_EXE" -sysparm "$LIB_INFO_SYSPARM" -sysin "$SCRIPT_DIR/library_info_cli20260320.sas" -log "$LOG_ARG_5" "${SAS_PRINT_5[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/library_info.log")"
+log_step_changes "6/7" "library_info_cli20260320.sas" "$SNAP_5"
+SNAP_6=$(snapshot_output)
 
 # Construct the expected variable info file path using all three naming path
 # segments (ggg_parent, gg_parent, g_parent) and today's date stamp, matching
@@ -753,6 +888,7 @@ else
     echo "      Required commands: python3, python, or py"
     exit 1
 fi
+log_step_changes "7/7" "metadata_to_dict_cli20260320.py" "$SNAP_6"
 
 echo "=========================================="
 echo "Pipeline Complete!"
@@ -768,7 +904,19 @@ if [ -d "$DAC_SDTM_DIR" ]; then
     echo "  - SDTM:      $DAC_SDTM_DIR"
 fi
 echo "  - Logs:      $DAC_LOGS_DIR"
+echo "  - Change Log: $CHANGE_LOG_FILE"
 echo "=========================================="
+
+# Write the change log footer
+{
+    printf "\n"
+    printf -- "=======================================================\n"
+    printf " Pipeline Complete\n"
+    printf " End Time: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+    printf "=======================================================\n"
+} >> "$CHANGE_LOG_FILE"
+
+echo "Change log written to: $CHANGE_LOG_FILE"
 
 exit 0
 
