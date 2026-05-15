@@ -30,19 +30,48 @@ DEFAULT_OUTPUT_BASENAME = "dictionary"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Convert metadata Excel sheets into combined dictionary CSV/XLSX outputs."
+        description=(
+            "Convert a multi-sheet metadata Excel workbook into combined\n"
+            "dictionary outputs (CSV and XLSX).\n\n"
+            "Every sheet in the workbook is read (header on row 3), column\n"
+            "names are normalised to uppercase, a SOURCE_TAB column is added,\n"
+            "and all sheets are concatenated into a single output file pair:\n"
+            "  <output-dir>/dictionary.csv\n"
+            "  <output-dir>/dictionary.xlsx"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  # no arguments — script prompts you for the input file path\n"
+            "  python 01_convert_metadata_to_dict_standalone.py\n\n"
+            "  # provide the input file via -i\n"
+            "  python 01_convert_metadata_to_dict_standalone.py -i meta_data_summary.xlsx\n\n"
+            "  # custom output directory\n"
+            "  python 01_convert_metadata_to_dict_standalone.py "
+            "-i meta_data_summary.xlsx -o /path/to/output\n\n"
+            "  # show this help message\n"
+            "  python 01_convert_metadata_to_dict_standalone.py -h"
+        ),
     )
     parser.add_argument(
         "-i",
         "--input-file",
+        metavar="INPUT_FILE",
         default=None,
-        help="Path to the input metadata Excel file. If omitted, you will be prompted.",
+        help=(
+            "Path to the input metadata Excel workbook (.xlsx). "
+            "If omitted, the script will prompt you to enter the path interactively."
+        ),
     )
     parser.add_argument(
         "-o",
         "--output-dir",
+        metavar="OUTPUT_DIR",
         default=DEFAULT_OUTPUT_DIR,
-        help=f"Output directory for generated files (default: {DEFAULT_OUTPUT_DIR})",
+        help=(
+            f"Directory where dictionary.csv and dictionary.xlsx are written. "
+            f"Created automatically if it does not exist. (default: {DEFAULT_OUTPUT_DIR})"
+        ),
     )
     return parser.parse_args()
 
