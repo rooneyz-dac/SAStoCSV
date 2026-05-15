@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 """Standalone metadata-to-dictionary converter.
 
-Default behavior (no arguments):
-    - Reads ./meta_data_summary.xlsx
-    - Writes ./dict/dictionary.csv and ./dict/dictionary.xlsx
+Usage:
+    python 01_convert_metadata_to_dict_standalone.py [-i INPUT_FILE] [-o OUTPUT_DIR]
 
-You can optionally pass a different input file as the first argument.
+If -i is not supplied the script prompts for the input file path interactively.
+Outputs are always written as both CSV and XLSX to the output directory.
+
+Examples:
+    # interactive prompt for input
+    python 01_convert_metadata_to_dict_standalone.py
+
+    # explicit input file via -i flag
+    python 01_convert_metadata_to_dict_standalone.py -i /path/to/meta_data_summary.xlsx
+
+    # custom output directory
+    python 01_convert_metadata_to_dict_standalone.py -i /path/to/meta_data_summary.xlsx -o /path/to/out
 """
 
 import argparse
@@ -14,7 +24,6 @@ from pathlib import Path
 import pandas as pd
 
 
-DEFAULT_INPUT_FILE = "meta_data_summary.xlsx"
 DEFAULT_OUTPUT_DIR = "dict"
 DEFAULT_OUTPUT_BASENAME = "dictionary"
 
@@ -24,10 +33,10 @@ def parse_args() -> argparse.Namespace:
         description="Convert metadata Excel sheets into combined dictionary CSV/XLSX outputs."
     )
     parser.add_argument(
-        "input_file",
-        nargs="?",
-        default=DEFAULT_INPUT_FILE,
-        help=f"Input metadata Excel file (default: {DEFAULT_INPUT_FILE})",
+        "-i",
+        "--input-file",
+        default=None,
+        help="Path to the input metadata Excel file. If omitted, you will be prompted.",
     )
     parser.add_argument(
         "-o",
@@ -57,7 +66,13 @@ def build_dictionary(input_file: Path) -> pd.DataFrame:
 def main() -> int:
     args = parse_args()
 
-    input_path = Path(args.input_file).expanduser().resolve()
+    # Resolve input file: use -i value if supplied, otherwise prompt the user
+    if args.input_file:
+        input_path = Path(args.input_file).expanduser().resolve()
+    else:
+        raw = input("Please enter the path to the metadata Excel file: ").strip()
+        input_path = Path(raw).expanduser().resolve()
+
     output_dir = Path(args.output_dir).expanduser().resolve()
 
     if not input_path.exists() or not input_path.is_file():
