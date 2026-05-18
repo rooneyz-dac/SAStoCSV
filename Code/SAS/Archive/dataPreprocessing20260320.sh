@@ -21,7 +21,7 @@
 #   output_directory - Path where outputs and documentation will be saved [optional, default: E:\output]
 #
 # Options:
-#   --trial-name=NAME      Name for trial dictionary (default: grandparent folder of input dir)
+#   --trial-name=NAME      Name for trial dictionary (default: YYYYMMDD)
 #   --format=VALUE         Data specs format: long|condensed|wide (default: long)
 #   --order=VALUE          Variable order: varnum|name (default: varnum)
 #   --index=VALUE          Index variable(s) for data specs
@@ -155,25 +155,9 @@ for arg in "$@"; do
     esac
 done
 
-# Default TRIAL_NAME to grandparent folder name of INPUT_DIR if not provided;
-# fall back to current date when the path is too shallow to have a grandparent.
+# Default TRIAL_NAME to current date if not provided
 if [ -z "$TRIAL_NAME" ]; then
-    _tn_parent="${INPUT_DIR%/*}"
-    if [ "$_tn_parent" = "$INPUT_DIR" ]; then
-        _tn_parent="${INPUT_DIR%\\*}"
-    fi
-    _tn_grand="${_tn_parent%/*}"
-    if [ "$_tn_grand" = "$_tn_parent" ]; then
-        _tn_grand="${_tn_parent%\\*}"
-    fi
-    if [[ "$_tn_grand" == */* ]]; then
-        TRIAL_NAME="${_tn_grand##*/}"
-    else
-        TRIAL_NAME="${_tn_grand##*\\}"
-    fi
-    if [ -z "$TRIAL_NAME" ]; then
-        TRIAL_NAME=$(date +%Y%m%d)
-    fi
+    TRIAL_NAME=$(date +%Y%m%d)
 fi
 
 # Validate input directory exists
