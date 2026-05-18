@@ -686,6 +686,8 @@ LOG_ARG_0=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/rename_domains.log" 
 SAS_PRINT_0=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_0=(-print "$DAC_LOGS_DIR/rename_domains.lst")
+else
+    SAS_PRINT_0=(-print "$NULL_DEVICE")
 fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/rename_study_domains_cli20260320.sas" -log "$LOG_ARG_0" "${SAS_PRINT_0[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/rename_domains.log")"
@@ -733,6 +735,8 @@ LOG_ARG_1=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/sas_to_xpt.log" || e
 SAS_PRINT_1=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_1=(-print "$DAC_LOGS_DIR/sas_to_xpt.lst")
+else
+    SAS_PRINT_1=(-print "$NULL_DEVICE")
 fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoXPTcli20260320.sas" -log "$LOG_ARG_1" "${SAS_PRINT_1[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/sas_to_xpt.log")"
@@ -765,6 +769,8 @@ LOG_ARG_2=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/sas_to_csv.log" || e
 SAS_PRINT_2=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_2=(-print "$DAC_LOGS_DIR/sas_to_csv.lst")
+else
+    SAS_PRINT_2=(-print "$NULL_DEVICE")
 fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/SAStoCSVcli20260320.sas" -log "$LOG_ARG_2" "${SAS_PRINT_2[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/sas_to_csv.log")"
@@ -777,6 +783,8 @@ LOG_ARG_3=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/variable_info.log" |
 SAS_PRINT_3=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_3=(-print "$DAC_LOGS_DIR/variable_info.lst")
+else
+    SAS_PRINT_3=(-print "$NULL_DEVICE")
 fi
 VAR_INFO_SYSPARM="$SYSPARM"
 if [ -n "$NAME_DIR" ]; then
@@ -797,6 +805,8 @@ LOG_ARG_4=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/data_specs.log" || e
 SAS_PRINT_4=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_4=(-print "$DAC_LOGS_DIR/data_specs.lst")
+else
+    SAS_PRINT_4=(-print "$NULL_DEVICE")
 fi
 "$SAS_EXE" -sysparm "$DATA_SPECS_SYSPARM" -sysin "$SCRIPT_DIR/data_specs_cli20260320.sas" -log "$LOG_ARG_4" "${SAS_PRINT_4[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/data_specs.log")"
@@ -809,6 +819,8 @@ LOG_ARG_5=$([ "$LOG_ENABLED" = "1" ] && echo "$DAC_LOGS_DIR/library_info.log" ||
 SAS_PRINT_5=()
 if [ "$LST_ENABLED" = "1" ]; then
     SAS_PRINT_5=(-print "$DAC_LOGS_DIR/library_info.lst")
+else
+    SAS_PRINT_5=(-print "$NULL_DEVICE")
 fi
 LIB_INFO_SYSPARM="$SYSPARM"
 if [ -n "$NAME_DIR" ]; then
