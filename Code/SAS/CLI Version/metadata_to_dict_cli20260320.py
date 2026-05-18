@@ -19,6 +19,8 @@ Positional arguments:
 Behavior:
     - Reads every sheet in the workbook using header row 3 (zero-based index 2).
     - Normalizes column names to uppercase, replaces any whitespace runs (including newlines) with a single space, and strips.
+    - Adds a SOURCE_TAB column to each sheet's data containing the sheet name, so each row
+      in the combined output references the variable info tab it originated from.
     - Concatenates all sheets and writes two output files to DAC_Documents:
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
@@ -48,6 +50,8 @@ ChangeLog:
     2026-03-27  Accept optional input_dir argument; derive GGG/GG/G filename components from
                 input_dir (matching SAS variable_info naming convention) instead of output_dir.
     2026-03-30  Switched argument parsing to argparse.
+    2026-05-18  Added SOURCE_TAB column: each row is tagged with the sheet name it was read
+                from, so the dictionary output retains a reference to the variable info tab.
 """
 
 import argparse
@@ -136,6 +140,10 @@ def main():
                 .str.replace(r'\s+', ' ', regex=True)
                 .str.strip()
             )
+
+            # Tag each row with the source tab name so the combined dictionary
+            # retains a reference back to the variable info sheet it came from.
+            df['SOURCE_TAB'] = sheet
 
             # Append to the combined DataFrame
             combined_df = pd.concat([combined_df, df], ignore_index=True)
