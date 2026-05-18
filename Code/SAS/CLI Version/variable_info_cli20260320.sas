@@ -14,14 +14,12 @@
 |   - Output file name includes library name and date stamp
 |   - Each dataset is placed on its own sheet in the Excel workbook
 | 2026-03-28: Column formatting update
-|   - Dropped FORMAT and INFORMAT columns from output to match the
-|     column selection logic in metadata_to_dict_cli20260320.py
+|   - Dropped FORMAT and INFORMAT columns from output
 |   - Enforced column order: NUM, VARIABLE, TYPE, LEN, POS, LABEL
 |   - Switched from PROC PRINT to PROC REPORT to enable per-column
 |     width formatting in the Excel workbook output
 |   - Centered alignment on all columns (header and data cells)
-|   - Added variant column-name renaming (mirrors col_rename_map in
-|     metadata_to_dict_cli20260320.py): variant column names such as
+|   - Added variant column-name renaming: variant column names such as
 |     LENGTH, VARIABLE_NAME, VAR_NUM, etc. are normalized to the
 |     standard desired names (NUM, VARIABLE, TYPE, LEN, POS, LABEL) before
 |     any columns are dropped, with DEBUG/NOTE logging for renames
@@ -51,8 +49,7 @@
 | number, name, type, length, position, and label. Results are exported to a
 | multi-sheet Excel workbook (.xlsx) in the DAC_Documents subfolder
 | of the output directory, with one sheet per dataset.
-| Column selection and ordering mirrors the logic in
-| metadata_to_dict_cli20260320.py (NUM, VARIABLE, TYPE, LEN, POS, LABEL).
+| Output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL.
 |
 | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to the folder containing SAS datasets
@@ -221,7 +218,6 @@
     run;
 
     /**Rename variant column names to standard desired names**/
-    /**Mirrors the col_rename_map in metadata_to_dict_cli20260320.py.        **/
     /**If a variant column name is found AND the target standard name does    **/
     /**not already exist, the column is renamed to the standard name.        **/
     %local rename_pairs renamed_log;
@@ -331,7 +327,6 @@
     /**Identify and drop columns not in the desired list**/
     /**Desired output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL       **/
     /**MEMBER is retained for BY-group processing but excluded from output.**/
-    /**This mirrors the column-drop logic in metadata_to_dict_cli20260320.py**/
     %local drop_cols;
     proc contents data=allvarout out=_colinfo_(keep=name) noprint;
     run;
@@ -362,9 +357,7 @@
     quit;
 
     /**Create Excel output file with separate sheets per dataset**/
-    /**Column selection and ordering mirrors metadata_to_dict_cli20260320.py:**/
-    /**  desired_columns = [NUM, VARIABLE, TYPE, LEN, POS, LABEL]            **/
-    /**  FORMAT and INFORMAT are excluded to match Python output logic.       **/
+    /**Output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL              **/
     options nobyline;
     ods excel file="&out_file"
         options(sheet_name="#BYVAL(member)" embedded_titles='yes');
