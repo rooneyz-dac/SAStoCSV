@@ -25,7 +25,7 @@
 # Options:
 #   --trial-name=NAME
 #       Name used for the trial dictionary output file.
-#       Default: current date (YYYYMMDD).
+#       Default: grandparent folder name of the input directory.
 #
 #   --format=long|condensed|wide
 #       Controls how variables are listed in each dataset summary tab.
@@ -207,7 +207,7 @@ detailed_help() {
     echo "      DAC_Documents/dictionary_*.xlsx"
     echo "    Effect: Sets the trial identifier passed to the dictionary builder."
     echo "      The value is uppercased and logged during step [7/7]. Defaults to"
-    echo "      the current date (YYYYMMDD) if not provided."
+    echo "      the grandparent folder name of the input directory if not provided."
     echo ""
     echo "  --format=long|condensed|wide"
     echo "    Used by:"
@@ -324,7 +324,7 @@ usage() {
     echo "Options:"
     echo "  --trial-name=NAME"
     echo "      Name used for the trial dictionary output file."
-    echo "      Default: current date (YYYYMMDD)."
+    echo "      Default: grandparent folder name of the input directory."
     echo ""
     echo "  --format=long|condensed|wide"
     echo "      Controls how variables are listed in each dataset summary tab."
@@ -572,9 +572,25 @@ if [ -z "$INPUT_DIR" ]; then
     usage
 fi
 
-# Default TRIAL_NAME to current date if not provided
+# Default TRIAL_NAME to grandparent folder name of INPUT_DIR if not provided;
+# fall back to current date when the path is too shallow to have a grandparent.
 if [ -z "$TRIAL_NAME" ]; then
-    TRIAL_NAME=$(date +%Y%m%d)
+    _tn_parent="${INPUT_DIR%/*}"
+    if [ "$_tn_parent" = "$INPUT_DIR" ]; then
+        _tn_parent="${INPUT_DIR%\\*}"
+    fi
+    _tn_grand="${_tn_parent%/*}"
+    if [ "$_tn_grand" = "$_tn_parent" ]; then
+        _tn_grand="${_tn_parent%\\*}"
+    fi
+    if [[ "$_tn_grand" == */* ]]; then
+        TRIAL_NAME="${_tn_grand##*/}"
+    else
+        TRIAL_NAME="${_tn_grand##*\\}"
+    fi
+    if [ -z "$TRIAL_NAME" ]; then
+        TRIAL_NAME=$(date +%Y%m%d)
+    fi
 fi
 
 # Validate input directory exists
