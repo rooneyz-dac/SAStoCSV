@@ -411,7 +411,7 @@ snapshot_output() {
 _std_name_from_stem() {
     local stem_upper
     stem_upper=$(echo "$1" | tr '[:lower:]' '[:upper:]')
-    echo "$stem_upper" | rev | cut -d_ -f1 | rev
+    echo "${stem_upper##*_}"
 }
 
 # Build rename-detection notes for a set of input files.
