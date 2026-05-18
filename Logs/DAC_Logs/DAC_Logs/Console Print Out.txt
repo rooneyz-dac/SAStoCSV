@@ -1,0 +1,139 @@
+rooneyz@sph-pman10  /c/Users/rooneyz/Documents/Code/DataPreprocessing/DPP Update 13
+$ ./dataPreprocessing20260320.sh -i "C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM"
+Created logs directory: E:\output/DAC_Logs
+==========================================
+Data Preprocessing Pipeline
+==========================================
+Input Directory:  C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM
+Output Directory: E:\output
+Trial Name:       20260518
+Script Directory: /c/Users/rooneyz/Documents/Code/DataPreprocessing/DPP Update 13
+Data Specs Options:
+  Format:         long
+  Order:          varnum
+  Index:          <none>
+  Cat Threshold:  10
+  Where:          <none>
+  Debug:          0
+  Log Files:      1
+  Listing Files:  0
+==========================================
+[1/7] Standardizing dataset names...
+      Complete. Log: E:\output/DAC_Logs/rename_domains.log
+      Note: SAS files with non-standard names were standardized
+      Standardized SAS datasets available in: E:\output/DAC_SAS
+      Updating input path to standardized SAS files: E:\output/DAC_SAS
+      File naming path set to: C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\DAC_SAS
+[2/7] Converting SAS datasets to XPT format...
+      Complete. Log: E:\output/DAC_Logs/sas_to_xpt.log
+[3/7] Converting SAS datasets to CSV...
+      Complete. Log: E:\output/DAC_Logs/sas_to_csv.log
+[4/7] Generating variable information document...
+      Complete. Log: E:\output/DAC_Logs/variable_info.log
+[5/7] Generating data specifications document...
+      Complete. Log: E:\output/DAC_Logs/data_specs.log
+[6/7] Generating library information document...
+      Complete. Log: E:\output/DAC_Logs/library_info.log
+Warning: Variable info file not found at expected location:
+E:\output/DAC_Documents/variable_info_EnyoTestData_NASHBERKELEY20250808_DACSAS_20260518.xlsx
+Found variable info file at: E:\output/DAC_Documents/variable_info_EnyoTestData_NASHBERKELEY_DACSAS_20260518.xlsx
+[7/7] Generating trial dictionary from variable information...
+      Using Python command: python
+DEBUG: Input file: E:\output/DAC_Documents/variable_info_EnyoTestData_NASHBERKELEY_DACSAS_20260518.xlsx
+DEBUG: Output directory: E:\output
+DEBUG: Trial name: 20260518
+DEBUG: Input directory: C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\DAC_SAS
+DEBUG: Current working directory: C:\Users\rooneyz\Documents\Code\DataPreprocessing\DPP Update 13
+DEBUG: Directory already exists: E:\output\DAC_Documents
+DEBUG: Successfully loaded Excel file with 37 sheets
+DEBUG: Processing sheet: INLIB.AE
+DEBUG: Added 38 rows from sheet: INLIB.AE
+DEBUG: Processing sheet: INLIB.CE
+DEBUG: Added 16 rows from sheet: INLIB.CE
+DEBUG: Processing sheet: INLIB.CM
+DEBUG: Added 27 rows from sheet: INLIB.CM
+DEBUG: Processing sheet: INLIB.CO
+DEBUG: Added 10 rows from sheet: INLIB.CO
+DEBUG: Processing sheet: INLIB.DA
+DEBUG: Added 21 rows from sheet: INLIB.DA
+DEBUG: Processing sheet: INLIB.DM
+DEBUG: Added 12 rows from sheet: INLIB.DM
+DEBUG: Processing sheet: INLIB.DS
+DEBUG: Added 12 rows from sheet: INLIB.DS
+DEBUG: Processing sheet: INLIB.EC
+DEBUG: Added 22 rows from sheet: INLIB.EC
+DEBUG: Processing sheet: INLIB.EG
+DEBUG: Added 22 rows from sheet: INLIB.EG
+DEBUG: Processing sheet: INLIB.EX
+DEBUG: Added 18 rows from sheet: INLIB.EX
+DEBUG: Processing sheet: INLIB.FA
+DEBUG: Added 18 rows from sheet: INLIB.FA
+DEBUG: Processing sheet: INLIB.HO
+DEBUG: Added 11 rows from sheet: INLIB.HO
+DEBUG: Processing sheet: INLIB.IE
+DEBUG: Added 13 rows from sheet: INLIB.IE
+DEBUG: Processing sheet: INLIB.LB
+DEBUG: Added 33 rows from sheet: INLIB.LB
+DEBUG: Processing sheet: INLIB.MH
+DEBUG: Added 26 rows from sheet: INLIB.MH
+DEBUG: Processing sheet: INLIB.ML
+DEBUG: Added 14 rows from sheet: INLIB.ML
+DEBUG: Processing sheet: INLIB.MO
+DEBUG: Added 28 rows from sheet: INLIB.MO
+DEBUG: Processing sheet: INLIB.PC
+DEBUG: Added 32 rows from sheet: INLIB.PC
+DEBUG: Processing sheet: INLIB.PE
+DEBUG: Added 18 rows from sheet: INLIB.PE
+DEBUG: Processing sheet: INLIB.PR
+DEBUG: Added 21 rows from sheet: INLIB.PR
+DEBUG: Processing sheet: INLIB.QS
+DEBUG: Added 25 rows from sheet: INLIB.QS
+DEBUG: Processing sheet: INLIB.RP
+DEBUG: Added 19 rows from sheet: INLIB.RP
+DEBUG: Processing sheet: INLIB.SE
+DEBUG: Added 12 rows from sheet: INLIB.SE
+DEBUG: Processing sheet: INLIB.SU
+DEBUG: Added 23 rows from sheet: INLIB.SU
+DEBUG: Processing sheet: INLIB.SUPPAE
+DEBUG: Added 12 rows from sheet: INLIB.SUPPAE
+DEBUG: Processing sheet: INLIB.SUPPDM
+DEBUG: Added 12 rows from sheet: INLIB.SUPPDM
+DEBUG: Processing sheet: INLIB.SUPPDS
+DEBUG: Added 12 rows from sheet: INLIB.SUPPDS
+DEBUG: Processing sheet: INLIB.SUPPEG
+DEBUG: Added 12 rows from sheet: INLIB.SUPPEG
+DEBUG: Processing sheet: INLIB.SUPPFA
+DEBUG: Added 12 rows from sheet: INLIB.SUPPFA
+DEBUG: Processing sheet: INLIB.SUPPLB
+DEBUG: Added 12 rows from sheet: INLIB.SUPPLB
+DEBUG: Processing sheet: INLIB.SUPPMO
+DEBUG: Added 12 rows from sheet: INLIB.SUPPMO
+DEBUG: Processing sheet: INLIB.SUPPPE
+DEBUG: Added 12 rows from sheet: INLIB.SUPPPE
+DEBUG: Processing sheet: INLIB.SUPPPR
+DEBUG: Added 12 rows from sheet: INLIB.SUPPPR
+DEBUG: Processing sheet: INLIB.SUPPQS
+DEBUG: Added 12 rows from sheet: INLIB.SUPPQS
+DEBUG: Processing sheet: INLIB.SV
+DEBUG: Added 11 rows from sheet: INLIB.SV
+DEBUG: Processing sheet: INLIB.VE
+DEBUG: Added 17 rows from sheet: INLIB.VE
+DEBUG: Processing sheet: INLIB.VS
+DEBUG: Added 24 rows from sheet: INLIB.VS
+DEBUG: Total rows in combined data: 663
+SUCCESS: Combined CSV data saved to: E:\output\DAC_Documents\dictionary_EnyoTestData_NASHBERKELEY20250808_DACSAS_20260518.csv
+SUCCESS: Combined Excel data saved to: E:\output\DAC_Documents\dictionary_EnyoTestData_NASHBERKELEY20250808_DACSAS_20260518.xlsx
+Process completed successfully
+      Complete.
+==========================================
+Pipeline Complete!
+==========================================
+Output files located in:
+  - Documents: E:\output/DAC_Documents
+  - CSV:       E:\output/DAC_CSV
+  - XPT:       E:\output/DAC_XPT
+  - SAS:       E:\output/DAC_SAS
+  - Logs:      E:\output/DAC_Logs
+  - Change Log: E:\output/pipeline_change_log.txt
+==========================================
+Change log written to: E:\output/pipeline_change_log.txt
