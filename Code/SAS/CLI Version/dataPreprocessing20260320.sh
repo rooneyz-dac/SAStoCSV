@@ -74,7 +74,7 @@
 # Examples:
 #   ./dataPreprocessing20260320.sh -i "C:/data/input"
 #   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output"
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --trial-name=FLINT2 --format=wide
+#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --trial-name=SampleStudy --format=wide
 #   ./dataPreprocessing20260320.sh -i "/path/to/sas/data" -o "/path/to/output" --format=condensed --debug=1
 #   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --lst=1
 #   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --log=1
@@ -194,7 +194,7 @@ detailed_help() {
     echo "      DAC_Logs/*.lst    - SAS listing files (when --lst=1; steps 1-6)"
     echo "    Effect: Sets the root output directory. All pipeline subdirectories,"
     echo "      documentation files, and optional log/listing files are created"
-    echo "      under this path. Defaults to E:\\output if not provided."
+    echo "      under this path. Defaults to E:/output if not provided."
     echo ""
     echo "OPTIONAL FLAGS"
     echo "──────────────────────────────────────────"
@@ -317,7 +317,7 @@ usage() {
     echo ""
     echo "Flags:"
     echo "  -i input_dir               Path to directory containing SAS datasets (required)"
-    echo "  -o output_dir              Path where outputs will be saved (optional, default: E:\\output)"
+    echo "  -o output_dir              Path where outputs will be saved (optional, default: E:/output)"
     echo "  -H, --detailed-help        Show detailed help: which scripts use each flag,"
     echo "                             which output files are affected, and the effect"
     echo ""
@@ -367,7 +367,7 @@ usage() {
     echo "Examples:"
     echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input'"
     echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output'"
-    echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --trial-name=FLINT2 --format=wide"
+    echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --trial-name=SampleStudy --format=wide"
     echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --lst=1"
     echo "  ./dataPreprocessing20260320.sh -i 'C:/data/input' -o 'C:/data/output' --log=1"
     exit "${1:-1}"
