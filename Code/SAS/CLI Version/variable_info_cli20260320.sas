@@ -27,6 +27,10 @@
 |     list is removed from the dataset before output, with DEBUG
 |     notification printed to the console and a highlighted NOTE
 |     written to the SAS log
+| 2026-05-18: Bug fix - empty drop_cols guard
+|   - Wrapped %sysfunc(strip(&drop_cols)) in a %length > 0 guard to
+|     prevent "too few arguments" ERROR when all columns are already
+|     in the desired list and drop_cols is empty
 | 2026-03-29: Column name variant fix
 |   - Added OPTIONS VALIDVARNAME=V7 to force standard V7 column names
 |     in PROC CONTENTS ODS output (prevents space-containing names
@@ -337,7 +341,8 @@
         where upcase(name) not in ('NUM', 'VARIABLE', 'TYPE', 'LEN', 'POS', 'LABEL', 'MEMBER');
     quit;
 
-    %let drop_cols = %sysfunc(strip(&drop_cols));
+    %if %length(&drop_cols) > 0 %then
+        %let drop_cols = %sysfunc(strip(&drop_cols));
 
     %if %length(&drop_cols) > 0 %then %do;
         %put DEBUG: Dropping columns not in desired list: &drop_cols;
