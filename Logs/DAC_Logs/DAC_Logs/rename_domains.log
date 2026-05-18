@@ -1,0 +1,1022 @@
+1                                           The SAS System                  15:33 Monday, May 18, 2026
+
+NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
+NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
+      Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
+NOTE: This session is executing on the X64_DSRV16  platform.
+
+
+
+NOTE: Updated analytical products:
+      
+      SAS/STAT 14.3
+      SAS/ETS 14.3
+      SAS/IML 14.3
+      SAS/QC 14.3
+
+NOTE: Additional host information:
+
+ X64_DSRV16 WIN 10.0.26100  Server
+
+NOTE: SAS initialization used:
+      real time           0.48 seconds
+      cpu time            0.45 seconds
+      
+1          /*------------------------------------------------------------------*
+2          | PROGRAM NAME : rename_study_domains_cli20260320.sas
+3          | SHORT DESC   : Standardizes SAS and XPT dataset names by removing
+4          |                suffixes (e.g., AE_PLACEBO to AE) and placing
+5          |                renamed copies in DAC_SAS or DAC_XPT subfolders
+6          *------------------------------------------------------------------*
+7          | CREATED BY   : DAC Development Team
+8          | DATE CREATED : 2026-05-08
+9          | VERSION      : 1.2
+10         *------------------------------------------------------------------*
+11         | VERSION UPDATES:
+12         | 2026-05-08: Initial CLI release (v1.0)
+13         |   - Added SYSPARM parsing for input and output directories
+14         |   - Standardizes dataset names by keeping only the prefix before
+15         |     the first underscore (e.g., AE_PLACEBO -> AE)
+16         |   - Copies SAS7BDAT datasets to DAC_SAS subfolder when any file
+17         |     in the input directory has a non-standard (suffixed) name
+18         |   - Copies XPT datasets to DAC_XPT subfolder when any XPT file
+19         |     in the input directory has a non-standard name
+20         |   - Files without underscores are copied unchanged to the new
+21         |     folder so the folder is a complete, self-consistent set
+22         | 2026-05-12: SAS7BDAT logic updated to match OriginalSAS (v1.1)
+23         |   - Replaced Windows DIR-based file listing with libname +
+24         |     dictionary.tables discovery (aligns with
+25         |     rename_study_domains_ZRlocalCopy.sas)
+26         |   - ALL datasets are now copied to DAC_SAS first via proc copy,
+27         |     then datasets with suffixes are renamed in-place in DAC_SAS
+28         |     using proc datasets change (same approach as original script)
+29         |   - Standard name derived with scan(memname, 1, '_') -- identical
+30         |     to the original script
+31         | 2026-05-12: Fix standard name extraction (v1.2)
+32         |   - Changed scan position from 1 to -1 so the domain name is taken
+2                                           The SAS System                  15:33 Monday, May 18, 2026
+
+33         |     from the LAST token after the final underscore (e.g.
+34         |     BERKELEY_AE -> AE).  Using position 1 caused all datasets to
+35         |     map to the study prefix (e.g. BERKELEY), triggering a duplicate-
+36         |     name collision for every dataset in the library.
+37         *------------------------------------------------------------------*
+38         | PURPOSE
+39         | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
+40         | input directory and standardizes their names by removing
+41         | study-specific suffixes (e.g., converting AE_PLACEBO to AE).
+42         | When any dataset requires renaming, ALL datasets of that type are
+43         | copied with standardized names to a new subfolder:
+44         |   - DAC_SAS for .sas7bdat files
+45         |   - DAC_XPT for .xpt files
+46         | This ensures that subsequent pipeline scripts operate on a
+47         | complete, consistently named set of datasets.
+48         |
+49         | Naming rule: the standard name is the portion of the dataset name
+50         | after the last underscore (scan(memname, -1, '_')).  E.g.:
+51         |   BERKELEY_AE   -> AE
+52         |   BERKELEY_SUPPAE -> SUPPAE
+53         |   CM          -> CM  (unchanged; no folder created for this alone)
+54         |
+55         | 1.1: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+56         | INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
+57         |                    files to be renamed
+58         | OUTPUT_DIRECTORY = Path to folder where DAC_SAS and/or DAC_XPT
+59         |                    subfolders will be created. Must exist prior
+60         |                    to execution.
+61         |
+62         | USAGE:
+63         |   sas -sysparm "input_directory|output_directory"
+64         |       -sysin rename_study_domains_cli20260320.sas
+65         |
+66         | OUTPUT STRUCTURE:
+67         |   output_directory\
+68         |   ├── DAC_SAS\    - Standardized SAS7BDAT datasets
+69         |   │                 (created only when any .sas7bdat dataset has
+70         |   │                  a non-standard suffix)
+71         |   └── DAC_XPT\   - Standardized XPT datasets
+72         |                     (created only when any .xpt file has
+73         |                      a non-standard suffix)
+74         *------------------------------------------------------------------*
+75         | OPERATING SYSTEM COMPATIBILITY
+76         | SAS v9.4 or Higher: Yes
+77         | Windows:            Yes
+78         *------------------------------------------------------------------*
+79         | NOTES
+80         | - If two input datasets share the same standard name (e.g.,
+81         |   AE_PLACEBO and AE_TREATMENT both map to AE), a WARNING is
+82         |   issued and those datasets are skipped.  Resolve naming conflicts
+83         |   in the source data before running the pipeline.
+84         | - For XPT files the script queries the SAS transport library to
+85         |   obtain the actual member name inside each file.  SAS XPT
+86         |   format limits member names to 8 characters.
+3                                           The SAS System                  15:33 Monday, May 18, 2026
+
+87         *------------------------------------------------------------------*
+88         | EXAMPLES
+89         |
+90         | Standardize SAS dataset names:
+91         |   sas -sysparm "C:\data\input|C:\data\output"
+92         |       -sysin rename_study_domains_cli20260320.sas
+93         |
+94         | Standardize XPT dataset names:
+95         |   sas -sysparm "C:\data\xpt_files|C:\data\output"
+96         |       -sysin rename_study_domains_cli20260320.sas
+97         *------------------------------------------------------------------*/
+98         
+99         /* ----------------------------------------------------------------
+100           Helper macro: copy one XPT file to DAC_XPT with a standardized
+101           member name.  Called via %nrstr() inside a DATA step CALL EXECUTE
+102           so that each file is processed sequentially after the driving
+103           DATA step completes.
+104        
+105           Parameters:
+106             inpath        - full path to the source .xpt file
+107             outpath       - full path for the destination .xpt file
+108             standard_name - desired (standardized) SAS dataset name
+109        ---------------------------------------------------------------- */
+110        %macro _copy_xpt_file(inpath=, outpath=, standard_name=);
+111        
+112            /* Open source XPT with SAS transport engine */
+113            libname _xinlib xport "&inpath";
+114        
+115            /* Get the actual member name stored inside the XPT file */
+116            proc sql noprint;
+117                select memname into :_xpt_memname trimmed
+118                from dictionary.tables
+119                where libname = '_XINLIB';
+120            quit;
+121        
+122            %if %length(&_xpt_memname) = 0 %then %do;
+123                %put WARNING: No dataset found in XPT file: &inpath -- skipping.;
+124                libname _xinlib clear;
+125                %return;
+126            %end;
+127        
+128            %let _xpt_memname_lc = %lowcase(&_xpt_memname);
+129            %let _std_lc         = %lowcase(&standard_name);
+130        
+131            %if %upcase(&_xpt_memname) ne %upcase(&standard_name) %then %do;
+132                /* Copy internal dataset to WORK under the standard name */
+133                data work.&_std_lc;
+134                    set _xinlib.&_xpt_memname_lc;
+135                run;
+136        
+137                libname _xinlib clear;
+138        
+139                /* Write the WORK dataset to the new XPT file */
+140                libname _xoutlib xport "&outpath";
+4                                           The SAS System                  15:33 Monday, May 18, 2026
+
+141                proc copy in=work out=_xoutlib;
+142                    select &_std_lc;
+143                run;
+144                libname _xoutlib clear;
+145        
+146                /* Clean up temporary WORK dataset */
+147                proc datasets lib=work nolist;
+148                    delete &_std_lc;
+149                quit;
+150            %end;
+151            %else %do;
+152                /* Name already matches standard; copy file as-is */
+153                libname _xoutlib xport "&outpath";
+154                proc copy in=_xinlib out=_xoutlib; run;
+155                libname _xinlib  clear;
+156                libname _xoutlib clear;
+157            %end;
+158        
+159        %mend _copy_xpt_file;
+160        
+161        
+162        /* ================================================================
+163           Main macro
+164        ================================================================ */
+165        %macro rename_study_domains;
+166        
+167            %let sysparm_value = &sysparm;
+168            %put NOTE: [rename_study_domains] Raw SYSPARM = &sysparm_value;
+169        
+170            /* ---- Parse SYSPARM: input_dir|output_dir ---- */
+171            %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+172            %if &pipe_pos > 0 %then %do;
+173                %let indir  = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+174                %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+175            %end;
+176            %else %do;
+177                %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+178                %abort;
+179            %end;
+180        
+181            %put NOTE: [rename_study_domains] Input Directory  = &indir;
+182            %put NOTE: [rename_study_domains] Output Directory = &outdir;
+183        
+184            /* ---- Validate directories ---- */
+185            %if %sysfunc(fileexist(&indir))  = 0 %then %do;
+186                %put ERROR: Input directory does not exist: &indir;
+187                %abort;
+188            %end;
+189            %if %sysfunc(fileexist(&outdir)) = 0 %then %do;
+190                %put ERROR: Output directory does not exist: &outdir;
+191                %abort;
+192            %end;
+193        
+194        
+5                                           The SAS System                  15:33 Monday, May 18, 2026
+
+195            /* ============================================================
+196               PART 1: Process SAS7BDAT files
+197               Uses dictionary.tables to discover library members, then
+198               renames with proc datasets change (logic from
+199               rename_study_domains_ZRlocalCopy.sas).
+200               ============================================================ */
+201        
+202            /* Point a libname at the input directory so SAS can query its
+203               member metadata via dictionary.tables */
+204            libname _inlib "&indir";
+205        
+206            /* Build a table of datasets that need renaming (have a suffix).
+207               Standard name = last token after the final underscore, e.g.
+208               BERKELEY_AE -> AE, BERKELEY_SUPPAE -> SUPPAE. */
+209            proc sql noprint;
+210                create table _work_sas as
+211                select
+212                    memname,
+213                    scan(memname, -1, '_') as standard_name length=32
+214                from dictionary.tables
+215                where upcase(libname) = '_INLIB'
+216                  and index(memname, '_') > 0;
+217        
+218                select count(*) into :sas_rename_count trimmed from _work_sas;
+219        
+220                select count(*) into :sas_total trimmed
+221                from dictionary.tables
+222                where upcase(libname) = '_INLIB';
+223            quit;
+224        
+225            %put NOTE: Found &sas_total SAS7BDAT dataset(s) in library, &sas_rename_count require
+225      ! renaming.;
+226        
+227            %if &sas_rename_count > 0 %then %do;
+228        
+229                /* Check for duplicate standard names and warn/exclude */
+230                proc sql noprint;
+231                    create table _work_sas_dups as
+232                    select standard_name, count(*) as n
+233                    from _work_sas
+234                    group by standard_name
+235                    having count(*) > 1;
+236                    select count(*) into :sas_dup_count trimmed from _work_sas_dups;
+237                quit;
+238        
+239                %if &sas_dup_count > 0 %then %do;
+240                    %put WARNING: Multiple SAS datasets map to the same standard name.;
+241                    %put WARNING: The following datasets will be SKIPPED to avoid overwriting:;
+242                    data _null_;
+243                        set _work_sas_dups;
+244                        put "  Standard name '" standard_name +(-1)
+245                            "' has " n "conflicting source datasets.";
+246                    run;
+247                    /* Exclude datasets with duplicate standard names */
+6                                           The SAS System                  15:33 Monday, May 18, 2026
+
+248                    proc sql noprint;
+249                        delete from _work_sas
+250                        where standard_name in (select standard_name from _work_sas_dups);
+251                    quit;
+252                    /* Re-count after exclusion */
+253                    proc sql noprint;
+254                        select count(*) into :sas_rename_count trimmed from _work_sas;
+255                    quit;
+256                %end;
+257        
+258                proc datasets lib=work nolist; delete _work_sas_dups; quit;
+259        
+260                %if &sas_rename_count > 0 %then %do;
+261        
+262                    /* Create DAC_SAS output directory if needed */
+263                    %let dac_sas_dir   = &outdir\DAC_SAS;
+264                    %let dac_sas_exist = %sysfunc(fileexist(&dac_sas_dir));
+265        
+266                    %if &dac_sas_exist = 0 %then %do;
+267                        %put NOTE: Creating directory &dac_sas_dir;
+268                        %let _rc = %sysfunc(dcreate(DAC_SAS, &outdir));
+269                        %if &_rc = %then %do;
+270                            %put ERROR: Failed to create directory &dac_sas_dir;
+271                            libname _inlib clear;
+272                            %abort;
+273                        %end;
+274                    %end;
+275                    %else %do;
+276                        %put NOTE: Directory &dac_sas_dir already exists.;
+277                    %end;
+278        
+279                    /* Copy ALL datasets from input library to DAC_SAS so the
+280                       output folder is a complete, self-consistent set.
+281                       Original input files are never modified. */
+282                    libname _outdac "&dac_sas_dir";
+283                    proc copy in=_inlib out=_outdac memtype=data; run;
+284                    libname _inlib clear;
+285        
+286                    /* Rename datasets that have suffixes in DAC_SAS using
+287                       proc datasets change (same approach as the original script) */
+288                    data _null_;
+289                        set _work_sas;
+290                        cmd = 'proc datasets lib=_outdac nolist; change ' ||
+291                              strip(memname) || ' = ' || strip(standard_name) || '; quit;';
+292                        call execute(cmd);
+293                        put cmd;
+294                    run;
+295        
+296                    libname _outdac clear;
+297        
+298                    %put NOTE: SAS dataset standardization complete.;
+299                    %put NOTE: Standardized SAS files are in: &dac_sas_dir;
+300        
+301                %end; /* sas_rename_count > 0 after dedup */
+7                                           The SAS System                  15:33 Monday, May 18, 2026
+
+302        
+303            %end; /* sas_rename_count > 0 */
+304            %else %do;
+305                %put NOTE: All &sas_total SAS7BDAT dataset(s) already have standard names. No
+305      ! DAC_SAS folder created.;
+306                libname _inlib clear;
+307            %end;
+308        
+309            proc datasets lib=work nolist; delete _work_sas; quit;
+310        
+311        
+312            /* ============================================================
+313               PART 2: Process XPT files
+314               ============================================================ */
+315        
+316            filename _xptlst pipe "dir /b ""&indir\*.xpt"" 2>nul";
+317        
+318            data _work_xpt;
+319                infile _xptlst truncover;
+320                input filename $256.;
+321                if filename = '' then delete;
+322                length dsname $32 standard_name $32
+323                       xpt_in_path $512 xpt_out_path $512;
+324                dsname        = upcase(scan(filename, 1, '.'));
+325                standard_name = upcase(scan(dsname,  -1, '_'));
+326                needs_rename  = (dsname ne standard_name);
+327                xpt_in_path   = "&indir\" || strip(filename);
+328                xpt_out_path  = "&outdir\DAC_XPT\" ||
+329                                strip(lowcase(standard_name)) || '.xpt';
+330            run;
+331        
+332            filename _xptlst clear;
+333        
+334            proc sql noprint;
+335                select count(*) into :xpt_total        trimmed from _work_xpt;
+336                select count(*) into :xpt_rename_count trimmed from _work_xpt
+337                    where needs_rename = 1;
+338            quit;
+339        
+340            %put NOTE: Found &xpt_total XPT file(s), &xpt_rename_count require renaming.;
+341        
+342            %if &xpt_total > 0 and &xpt_rename_count > 0 %then %do;
+343        
+344                /* Check for duplicate standard names and warn/exclude */
+345                proc sql noprint;
+346                    create table _work_xpt_dups as
+347                    select standard_name, count(*) as n
+348                    from _work_xpt
+349                    group by standard_name
+350                    having count(*) > 1;
+351                    select count(*) into :xpt_dup_count trimmed from _work_xpt_dups;
+352                quit;
+353        
+354                %if &xpt_dup_count > 0 %then %do;
+8                                           The SAS System                  15:33 Monday, May 18, 2026
+
+355                    %put WARNING: Multiple XPT datasets map to the same standard name.;
+356                    %put WARNING: The following XPT datasets will be SKIPPED:;
+357                    data _null_;
+358                        set _work_xpt_dups;
+359                        put "  Standard name '" standard_name +(-1)
+360                            "' has " n "conflicting source datasets.";
+361                    run;
+362                    proc sql noprint;
+363                        delete from _work_xpt
+364                        where standard_name in (select standard_name from _work_xpt_dups);
+365                    quit;
+366                    proc sql noprint;
+367                        select count(*) into :xpt_total        trimmed from _work_xpt;
+368                        select count(*) into :xpt_rename_count trimmed from _work_xpt
+369                            where needs_rename = 1;
+370                    quit;
+371                %end;
+372        
+373                proc datasets lib=work nolist; delete _work_xpt_dups; quit;
+374        
+375                %if &xpt_rename_count > 0 %then %do;
+376        
+377                    /* Create DAC_XPT output directory if needed */
+378                    %let dac_xpt_dir   = &outdir\DAC_XPT;
+379                    %let dac_xpt_exist = %sysfunc(fileexist(&dac_xpt_dir));
+380        
+381                    %if &dac_xpt_exist = 0 %then %do;
+382                        %put NOTE: Creating directory &dac_xpt_dir;
+383                        %let _rc = %sysfunc(dcreate(DAC_XPT, &outdir));
+384                        %if &_rc = %then %do;
+385                            %put ERROR: Failed to create directory &dac_xpt_dir;
+386                            %abort;
+387                        %end;
+388                    %end;
+389                    %else %do;
+390                        %put NOTE: Directory &dac_xpt_dir already exists.;
+391                    %end;
+392        
+393                    /* Generate a call to %_copy_xpt_file for each XPT file.
+394                       Using %nrstr prevents premature macro resolution of the
+395                       parameter values inside the DATA step. */
+396                    data _null_;
+397                        set _work_xpt;
+398                        call execute(
+399                            '%_copy_xpt_file(inpath=' || strip(xpt_in_path)   ||
+400                            ', outpath='              || strip(xpt_out_path)  ||
+401                            ', standard_name='        || strip(standard_name) || ')'
+402                        );
+403                    run;
+404        
+405                    %put NOTE: XPT dataset standardization complete.;
+406                    %put NOTE: Standardized XPT files are in: &dac_xpt_dir;
+407        
+408                %end; /* xpt_rename_count > 0 after dedup */
+9                                           The SAS System                  15:33 Monday, May 18, 2026
+
+409        
+410            %end; /* xpt_total > 0 and xpt_rename_count > 0 */
+411            %else %if &xpt_total > 0 %then %do;
+412                %put NOTE: All &xpt_total XPT file(s) already have standard names. No DAC_XPT
+412      ! folder created.;
+413            %end;
+414        
+415            proc datasets lib=work nolist; delete _work_xpt; quit;
+416        
+417            %put NOTE: [rename_study_domains] Processing complete.;
+418        
+419        %mend rename_study_domains;
+420        
+421        %rename_study_domains;
+NOTE: [rename_study_domains] Raw SYSPARM = 
+C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM|E:\output
+NOTE: [rename_study_domains] Input Directory  = 
+C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM
+NOTE: [rename_study_domains] Output Directory = E:\output
+NOTE: Libref _INLIB was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM
+NOTE: Table WORK._WORK_SAS created, with 37 rows and 2 columns.
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.39 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: Found 37 SAS7BDAT dataset(s) in library, 37 require renaming.
+NOTE: Table WORK._WORK_SAS_DUPS created, with 0 rows and 2 columns.
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: Deleting WORK._WORK_SAS_DUPS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: Creating directory E:\output\DAC_SAS
+NOTE: Libref _OUTDAC was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: E:\output\DAC_SAS
+
+NOTE: Copying _INLIB.BERKELEY_PBO_AE to _OUTDAC.BERKELEY_PBO_AE (memtype=DATA).
+NOTE: There were 80 observations read from the data set _INLIB.BERKELEY_PBO_AE.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_AE has 80 observations and 38 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_CE to _OUTDAC.BERKELEY_PBO_CE (memtype=DATA).
+NOTE: There were 41 observations read from the data set _INLIB.BERKELEY_PBO_CE.
+10                                          The SAS System                  15:33 Monday, May 18, 2026
+
+NOTE: The data set _OUTDAC.BERKELEY_PBO_CE has 41 observations and 16 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_CM to _OUTDAC.BERKELEY_PBO_CM (memtype=DATA).
+NOTE: There were 332 observations read from the data set _INLIB.BERKELEY_PBO_CM.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_CM has 332 observations and 27 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_CO to _OUTDAC.BERKELEY_PBO_CO (memtype=DATA).
+NOTE: There were 1750 observations read from the data set _INLIB.BERKELEY_PBO_CO.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_CO has 1750 observations and 10 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_DA to _OUTDAC.BERKELEY_PBO_DA (memtype=DATA).
+NOTE: There were 510 observations read from the data set _INLIB.BERKELEY_PBO_DA.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_DA has 510 observations and 21 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_DM to _OUTDAC.BERKELEY_PBO_DM (memtype=DATA).
+NOTE: There were 39 observations read from the data set _INLIB.BERKELEY_PBO_DM.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_DM has 39 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_DS to _OUTDAC.BERKELEY_PBO_DS (memtype=DATA).
+NOTE: There were 162 observations read from the data set _INLIB.BERKELEY_PBO_DS.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_DS has 162 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_EC to _OUTDAC.BERKELEY_PBO_EC (memtype=DATA).
+NOTE: There were 994 observations read from the data set _INLIB.BERKELEY_PBO_EC.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_EC has 994 observations and 22 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_EG to _OUTDAC.BERKELEY_PBO_EG (memtype=DATA).
+NOTE: There were 1438 observations read from the data set _INLIB.BERKELEY_PBO_EG.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_EG has 1438 observations and 22 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_EX to _OUTDAC.BERKELEY_PBO_EX (memtype=DATA).
+NOTE: There were 968 observations read from the data set _INLIB.BERKELEY_PBO_EX.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_EX has 968 observations and 18 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_FA to _OUTDAC.BERKELEY_PBO_FA (memtype=DATA).
+NOTE: There were 621 observations read from the data set _INLIB.BERKELEY_PBO_FA.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_FA has 621 observations and 18 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_HO to _OUTDAC.BERKELEY_PBO_HO (memtype=DATA).
+NOTE: There were 39 observations read from the data set _INLIB.BERKELEY_PBO_HO.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_HO has 39 observations and 11 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_IE to _OUTDAC.BERKELEY_PBO_IE (memtype=DATA).
+NOTE: There were 42 observations read from the data set _INLIB.BERKELEY_PBO_IE.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_IE has 42 observations and 13 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_LB to _OUTDAC.BERKELEY_PBO_LB (memtype=DATA).
+NOTE: There were 27353 observations read from the data set _INLIB.BERKELEY_PBO_LB.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_LB has 27353 observations and 33 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_MH to _OUTDAC.BERKELEY_PBO_MH (memtype=DATA).
+NOTE: There were 737 observations read from the data set _INLIB.BERKELEY_PBO_MH.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_MH has 737 observations and 26 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_ML to _OUTDAC.BERKELEY_PBO_ML (memtype=DATA).
+NOTE: There were 967 observations read from the data set _INLIB.BERKELEY_PBO_ML.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_ML has 967 observations and 14 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_MO to _OUTDAC.BERKELEY_PBO_MO (memtype=DATA).
+NOTE: There were 819 observations read from the data set _INLIB.BERKELEY_PBO_MO.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_MO has 819 observations and 28 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_PC to _OUTDAC.BERKELEY_PBO_PC (memtype=DATA).
+NOTE: There were 1674 observations read from the data set _INLIB.BERKELEY_PBO_PC.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_PC has 1674 observations and 32 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_PE to _OUTDAC.BERKELEY_PBO_PE (memtype=DATA).
+NOTE: There were 1182 observations read from the data set _INLIB.BERKELEY_PBO_PE.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_PE has 1182 observations and 18 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_PR to _OUTDAC.BERKELEY_PBO_PR (memtype=DATA).
+NOTE: There were 341 observations read from the data set _INLIB.BERKELEY_PBO_PR.
+11                                          The SAS System                  15:33 Monday, May 18, 2026
+
+NOTE: The data set _OUTDAC.BERKELEY_PBO_PR has 341 observations and 21 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_QS to _OUTDAC.BERKELEY_PBO_QS (memtype=DATA).
+NOTE: There were 2498 observations read from the data set _INLIB.BERKELEY_PBO_QS.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_QS has 2498 observations and 25 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_RP to _OUTDAC.BERKELEY_PBO_RP (memtype=DATA).
+NOTE: There were 40 observations read from the data set _INLIB.BERKELEY_PBO_RP.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_RP has 40 observations and 19 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SE to _OUTDAC.BERKELEY_PBO_SE (memtype=DATA).
+NOTE: There were 117 observations read from the data set _INLIB.BERKELEY_PBO_SE.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SE has 117 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SU to _OUTDAC.BERKELEY_PBO_SU (memtype=DATA).
+NOTE: There were 103 observations read from the data set _INLIB.BERKELEY_PBO_SU.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SU has 103 observations and 23 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPAE to _OUTDAC.BERKELEY_PBO_SUPPAE (memtype=DATA).
+NOTE: There were 173 observations read from the data set _INLIB.BERKELEY_PBO_SUPPAE.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPAE has 173 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPDM to _OUTDAC.BERKELEY_PBO_SUPPDM (memtype=DATA).
+NOTE: There were 262 observations read from the data set _INLIB.BERKELEY_PBO_SUPPDM.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPDM has 262 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPDS to _OUTDAC.BERKELEY_PBO_SUPPDS (memtype=DATA).
+NOTE: There were 39 observations read from the data set _INLIB.BERKELEY_PBO_SUPPDS.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPDS has 39 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPEG to _OUTDAC.BERKELEY_PBO_SUPPEG (memtype=DATA).
+NOTE: There were 102 observations read from the data set _INLIB.BERKELEY_PBO_SUPPEG.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPEG has 102 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPFA to _OUTDAC.BERKELEY_PBO_SUPPFA (memtype=DATA).
+NOTE: There were 40 observations read from the data set _INLIB.BERKELEY_PBO_SUPPFA.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPFA has 40 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPLB to _OUTDAC.BERKELEY_PBO_SUPPLB (memtype=DATA).
+NOTE: There were 239 observations read from the data set _INLIB.BERKELEY_PBO_SUPPLB.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPLB has 239 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPMO to _OUTDAC.BERKELEY_PBO_SUPPMO (memtype=DATA).
+NOTE: There were 192 observations read from the data set _INLIB.BERKELEY_PBO_SUPPMO.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPMO has 192 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPPE to _OUTDAC.BERKELEY_PBO_SUPPPE (memtype=DATA).
+NOTE: There were 188 observations read from the data set _INLIB.BERKELEY_PBO_SUPPPE.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPPE has 188 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPPR to _OUTDAC.BERKELEY_PBO_SUPPPR (memtype=DATA).
+NOTE: There were 39 observations read from the data set _INLIB.BERKELEY_PBO_SUPPPR.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPPR has 39 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SUPPQS to _OUTDAC.BERKELEY_PBO_SUPPQS (memtype=DATA).
+NOTE: There were 1015 observations read from the data set _INLIB.BERKELEY_PBO_SUPPQS.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SUPPQS has 1015 observations and 12 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_SV to _OUTDAC.BERKELEY_PBO_SV (memtype=DATA).
+NOTE: There were 375 observations read from the data set _INLIB.BERKELEY_PBO_SV.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_SV has 375 observations and 11 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_VE to _OUTDAC.BERKELEY_PBO_VE (memtype=DATA).
+NOTE: There were 375 observations read from the data set _INLIB.BERKELEY_PBO_VE.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_VE has 375 observations and 17 variables.
+NOTE: Copying _INLIB.BERKELEY_PBO_VS to _OUTDAC.BERKELEY_PBO_VS (memtype=DATA).
+NOTE: There were 3505 observations read from the data set _INLIB.BERKELEY_PBO_VS.
+NOTE: The data set _OUTDAC.BERKELEY_PBO_VS has 3505 observations and 24 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.18 seconds
+12                                          The SAS System                  15:33 Monday, May 18, 2026
+
+      cpu time            0.12 seconds
+      
+
+NOTE: Libref _INLIB has been deassigned.
+
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_AE = AE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_CE = CE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_CM = CM; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_CO = CO; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_DA = DA; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_DM = DM; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_DS = DS; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_EC = EC; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_EG = EG; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_EX = EX; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_FA = FA; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_HO = HO; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_IE = IE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_LB = LB; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_MH = MH; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_ML = ML; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_MO = MO; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_PC = PC; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_PE = PE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_PR = PR; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_QS = QS; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_RP = RP; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SE = SE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SU = SU; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPAE = SUPPAE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPDM = SUPPDM; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPDS = SUPPDS; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPEG = SUPPEG; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPFA = SUPPFA; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPLB = SUPPLB; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPMO = SUPPMO; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPPE = SUPPPE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPPR = SUPPPR; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPQS = SUPPQS; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_SV = SV; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_VE = VE; quit;
+proc datasets lib=_outdac nolist; change BERKELEY_PBO_VS = VS; quit;
+NOTE: There were 37 observations read from the data set WORK._WORK_SAS.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: CALL EXECUTE generated line.
+1         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_AE = AE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_AE to _OUTDAC.AE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+13                                          The SAS System                  15:33 Monday, May 18, 2026
+
+      cpu time            0.00 seconds
+      
+
+2         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_CE = CE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_CE to _OUTDAC.CE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+3         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_CM = CM; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_CM to _OUTDAC.CM (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+4         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_CO = CO; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_CO to _OUTDAC.CO (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+5         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_DA = DA; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_DA to _OUTDAC.DA (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+6         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_DM = DM; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_DM to _OUTDAC.DM (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+7         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_DS = DS; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_DS to _OUTDAC.DS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+8         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_EC = EC; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_EC to _OUTDAC.EC (memtype=DATA).
+14                                          The SAS System                  15:33 Monday, May 18, 2026
+
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+9         + proc datasets lib=_outdac nolist; change BERKELEY_PBO_EG = EG; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_EG to _OUTDAC.EG (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+10        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_EX = EX; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_EX to _OUTDAC.EX (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+11        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_FA = FA; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_FA to _OUTDAC.FA (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+12        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_HO = HO; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_HO to _OUTDAC.HO (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+13        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_IE = IE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_IE to _OUTDAC.IE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+14        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_LB = LB; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_LB to _OUTDAC.LB (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+15        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_MH = MH; quit;
+15                                          The SAS System                  15:33 Monday, May 18, 2026
+
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_MH to _OUTDAC.MH (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+16        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_ML = ML; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_ML to _OUTDAC.ML (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+17        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_MO = MO; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_MO to _OUTDAC.MO (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+18        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_PC = PC; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_PC to _OUTDAC.PC (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+19        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_PE = PE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_PE to _OUTDAC.PE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+20        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_PR = PR; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_PR to _OUTDAC.PR (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+21        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_QS = QS; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_QS to _OUTDAC.QS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+16                                          The SAS System                  15:33 Monday, May 18, 2026
+
+
+22        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_RP = RP; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_RP to _OUTDAC.RP (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+23        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SE = SE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SE to _OUTDAC.SE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+24        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SU = SU; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SU to _OUTDAC.SU (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+25        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPAE = SUPPAE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPAE to _OUTDAC.SUPPAE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+26        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPDM = SUPPDM; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPDM to _OUTDAC.SUPPDM (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+27        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPDS = SUPPDS; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPDS to _OUTDAC.SUPPDS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+28        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPEG = SUPPEG; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPEG to _OUTDAC.SUPPEG (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+17                                          The SAS System                  15:33 Monday, May 18, 2026
+
+      cpu time            0.01 seconds
+      
+
+29        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPFA = SUPPFA; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPFA to _OUTDAC.SUPPFA (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+30        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPLB = SUPPLB; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPLB to _OUTDAC.SUPPLB (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+31        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPMO = SUPPMO; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPMO to _OUTDAC.SUPPMO (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+32        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPPE = SUPPPE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPPE to _OUTDAC.SUPPPE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+33        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPPR = SUPPPR; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPPR to _OUTDAC.SUPPPR (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+34        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SUPPQS = SUPPQS; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SUPPQS to _OUTDAC.SUPPQS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+35        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_SV = SV; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_SV to _OUTDAC.SV (memtype=DATA).
+18                                          The SAS System                  15:33 Monday, May 18, 2026
+
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+36        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_VE = VE; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_VE to _OUTDAC.VE (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+37        + proc datasets lib=_outdac nolist; change BERKELEY_PBO_VS = VS; quit;
+
+NOTE: Changing the name _OUTDAC.BERKELEY_PBO_VS to _OUTDAC.VS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Libref _OUTDAC has been deassigned.
+NOTE: SAS dataset standardization complete.
+NOTE: Standardized SAS files are in: E:\output\DAC_SAS
+
+NOTE: Deleting WORK._WORK_SAS (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: The infile _XPTLST is:
+      Unnamed Pipe Access Device,
+      
+      PROCESS=dir /b 
+      "C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM\*.xpt" 2>nul,
+      RECFM=V,LRECL=32767
+
+NOTE: 0 records were read from the infile _XPTLST.
+NOTE: The data set WORK._WORK_XPT has 0 observations and 6 variables.
+NOTE: DATA statement used (Total process time):
+      real time           0.11 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Fileref _XPTLST has been deassigned.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Found 0 XPT file(s), 0 require renaming.
+
+19                                          The SAS System                  15:33 Monday, May 18, 2026
+
+NOTE: Deleting WORK._WORK_XPT (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: [rename_study_domains] Processing complete.
+NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
+NOTE: The SAS System used:
+      real time           1.42 seconds
+      cpu time            0.81 seconds
+      

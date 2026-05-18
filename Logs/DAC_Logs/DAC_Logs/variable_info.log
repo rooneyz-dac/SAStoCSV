@@ -1,0 +1,550 @@
+1                                           The SAS System                  15:33 Monday, May 18, 2026
+
+NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
+NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
+      Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
+NOTE: This session is executing on the X64_DSRV16  platform.
+
+
+
+NOTE: Updated analytical products:
+      
+      SAS/STAT 14.3
+      SAS/ETS 14.3
+      SAS/IML 14.3
+      SAS/QC 14.3
+
+NOTE: Additional host information:
+
+ X64_DSRV16 WIN 10.0.26100  Server
+
+NOTE: SAS initialization used:
+      real time           0.43 seconds
+      cpu time            0.35 seconds
+      
+1          /*------------------------------------------------------------------*
+2          | PROGRAM NAME : variable_info_cli20260320.sas
+3          | SHORT DESC   : Creates a variable information document with CLI
+4          |                parameter support
+5          *------------------------------------------------------------------*
+6          | CREATED BY   : DAC Development Team
+7          | DATE CREATED : 2025-01-22
+8          *------------------------------------------------------------------*
+9          | VERSION UPDATES:
+10         | 2025-01-22: Initial CLI release
+11         |   - Added SYSPARM parsing for input and output directories
+12         |   - Added automatic creation of DAC_Documents output subfolder
+13         |   - Added path validation for input and output directories
+14         |   - Output file name includes library name and date stamp
+15         |   - Each dataset is placed on its own sheet in the Excel workbook
+16         | 2026-03-28: Column formatting update
+17         |   - Dropped FORMAT and INFORMAT columns from output
+18         |   - Enforced column order: NUM, VARIABLE, TYPE, LEN, POS, LABEL
+19         |   - Switched from PROC PRINT to PROC REPORT to enable per-column
+20         |     width formatting in the Excel workbook output
+21         |   - Centered alignment on all columns (header and data cells)
+22         |   - Added variant column-name renaming: variant column names such as
+23         |     LENGTH, VARIABLE_NAME, VAR_NUM, etc. are normalized to the
+24         |     standard desired names (NUM, VARIABLE, TYPE, LEN, POS, LABEL) before
+25         |     any columns are dropped, with DEBUG/NOTE logging for renames
+26         |   - Added dynamic column-drop logic: any column not in the desired
+27         |     list is removed from the dataset before output, with DEBUG
+28         |     notification printed to the console and a highlighted NOTE
+29         |     written to the SAS log
+30         | 2026-03-29: Column name variant fix
+31         |   - Added OPTIONS VALIDVARNAME=V7 to force standard V7 column names
+32         |     in PROC CONTENTS ODS output (prevents space-containing names
+2                                           The SAS System                  15:33 Monday, May 18, 2026
+
+33         |     like 'Variable Number' that occur under VALIDVARNAME=ANY)
+34         |   - Added space-containing column name variants to the rename map
+35         |     as defense-in-depth for environments that override VALIDVARNAME:
+36         |       NUM      <- VARIABLE NUMBER, VAR NUM, VAR NO
+37         |       VARIABLE <- VARIABLE NAME, VAR NAME
+38         |       TYPE     <- VAR TYPE, DATA TYPE, VARIABLE TYPE
+39         |       LEN      <- (no space variants needed)
+40         |       POS      <- POSITION, START POSITION, COLUMN POSITION, START
+41         |       LABEL    <- VARIABLE LABEL, VAR LABEL
+42         |   - Updated rename SQL to use SAS name literals ('name'n) for any
+43         |     column names containing spaces, so PROC DATASETS RENAME works
+44         |     correctly under VALIDVARNAME=ANY
+45         *------------------------------------------------------------------*
+46         | PURPOSE
+47         | Creates a variable-level information report for all datasets in a
+48         | designated directory. For each dataset the report lists variable
+49         | number, name, type, length, position, and label. Results are exported to a
+50         | multi-sheet Excel workbook (.xlsx) in the DAC_Documents subfolder
+51         | of the output directory, with one sheet per dataset.
+52         | Output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL.
+53         |
+54         | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+55         | INPUT_DIRECTORY  = Path to the folder containing SAS datasets
+56         |                    (.sas7bdat) to be summarized
+57         | OUTPUT_DIRECTORY = Path to the folder where the DAC_Documents
+58         |                    subfolder and output file will be created.
+59         |                    Must exist prior to execution.
+60         |
+61         | 2.0: OPTIONAL PARAMETERS
+62         | None. All parameters are supplied via SYSPARM.
+63         |
+64         | USAGE:
+65         |   sas -sysparm "input_directory|output_directory"
+66         |       -sysin variable_info_cli20260320.sas
+67         |
+68         | OUTPUT STRUCTURE:
+69         |   output_directory\
+70         |   └── DAC_Documents\
+71         |       └── variable_info_<GGG_PARENT>_<GG_PARENT>_<G_PARENT>_<YYYYMMDD>.xlsx
+72         |           (one Excel sheet per dataset)
+73         *------------------------------------------------------------------*
+74         | OPERATING SYSTEM COMPATIBILITY
+75         | SAS v9.4 or Higher: Yes
+76         *------------------------------------------------------------------*
+77         | MACRO CALL
+78         |
+79         | Not applicable. Script is invoked directly via the SAS command
+80         | line using -sysin and -sysparm.
+81         *------------------------------------------------------------------*
+82         | EXAMPLES
+83         |
+84         | Basic usage:
+85         |   sas -sysparm "C:\data\input|C:\data\output"
+86         |       -sysin variable_info_cli20260320.sas
+3                                           The SAS System                  15:33 Monday, May 18, 2026
+
+87         |
+88         | Using a study-specific directory:
+89         |   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
+90         |       -sysin variable_info_cli20260320.sas
+91         *------------------------------------------------------------------*/
+92         
+93         %macro variable_info_cli;
+94             /**Force V7 variable naming so PROC CONTENTS ODS output uses standard**/
+95             /**column names (Num, Variable, Type, Len, Pos, Label) instead of the **/
+96             /**space-containing names produced under VALIDVARNAME=ANY             **/
+97             /**(e.g. 'Variable Number' instead of 'Num').                        **/
+98             options validvarname=v7;
+99         
+100            /**Parse SYSPARM for input and output paths**/
+101            /**Optional third segment: pipe-delimited key=value pairs (e.g. name_dir=...) **/
+102            %local sysparm_value indir outdir pipe_pos name_dir;
+103            %let sysparm_value = &sysparm;
+104            %let name_dir = ;
+105            %put DEBUG: Raw SYSPARM value = &sysparm_value;
+106        
+107            %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+108            %put DEBUG: Pipe position = &pipe_pos;
+109        
+110            %if &pipe_pos > 0 %then %do;
+111                %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+112                %local remaining pipe2_pos;
+113                %let remaining = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+114        
+115                /* Check for additional pipe-separated optional key=value parameters */
+116                %let pipe2_pos = %sysfunc(findc(&remaining, |));
+117                %if &pipe2_pos > 0 %then %do;
+118                    %let outdir = %substr(&remaining, 1, %eval(&pipe2_pos - 1));
+119                    %local extra_params ep_count ep_i ep_curr ep_name eq_pos ep_value;
+120                    %let extra_params = %substr(&remaining, %eval(&pipe2_pos + 1));
+121                    %let ep_count = %sysfunc(countw(&extra_params, |));
+122                    %do ep_i = 1 %to &ep_count;
+123                        %let ep_curr = %scan(&extra_params, &ep_i, |);
+124                        %let eq_pos = %sysfunc(findc(&ep_curr, =));
+125                        %if &eq_pos > 0 %then %do;
+126                            %let ep_name = %qupcase(%substr(&ep_curr, 1, %eval(&eq_pos - 1)));
+127                            %if &eq_pos < %length(&ep_curr) %then %do;
+128                                %let ep_value = %substr(&ep_curr, %eval(&eq_pos + 1));
+129                            %end;
+130                            %else %do;
+131                                %let ep_value = ;
+132                            %end;
+133                            %if &ep_name = NAME_DIR %then %do;
+134                                %let name_dir = &ep_value;
+135                            %end;
+136                        %end;
+137                    %end;
+138                %end;
+139                %else %do;
+140                    %let outdir = &remaining;
+4                                           The SAS System                  15:33 Monday, May 18, 2026
+
+141                %end;
+142            %end;
+143            %else %do;
+144                %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+145                %abort;
+146            %end;
+147        
+148            %put DEBUG: Input Directory = &indir;
+149            %put DEBUG: Output Directory = &outdir;
+150        
+151            /**Validate directories exist**/
+152            %local indir_exist outdir_exist;
+153            %let indir_exist = %sysfunc(fileexist(&indir));
+154            %let outdir_exist = %sysfunc(fileexist(&outdir));
+155        
+156            %put DEBUG: Input directory exists = &indir_exist;
+157            %put DEBUG: Output directory exists = &outdir_exist;
+158        
+159            %if &indir_exist = 0 %then %do;
+160                %put ERROR: Input directory does not exist: &indir;
+161                %abort;
+162            %end;
+163        
+164            %if &outdir_exist = 0 %then %do;
+165                %put ERROR: Output directory does not exist: &outdir;
+166                %abort;
+167            %end;
+168        
+169            /**Create DAC_Documents folder if it doesn't exist**/
+170            %local doc_dir doc_exist rc;
+171            %let doc_dir = &outdir\DAC_Documents;
+172            %let doc_exist = %sysfunc(fileexist(&doc_dir));
+173        
+174            %if &doc_exist = 0 %then %do;
+175                %put DEBUG: Creating directory &doc_dir;
+176                %let rc = %sysfunc(dcreate(DAC_Documents, &outdir));
+177                %if &rc = %then %do;
+178                    %put ERROR: Failed to create directory &doc_dir;
+179                    %abort;
+180                %end;
+181                %put DEBUG: Successfully created &doc_dir;
+182            %end;
+183            %else %do;
+184                %put DEBUG: Directory &doc_dir already exists;
+185            %end;
+186        
+187            /**Assign library to input directory**/
+188            libname INLIB "&indir";
+189        
+190            %if %sysfunc(libref(INLIB)) ^= 0 %then %do;
+191                %put ERROR: Failed to assign library to &indir;
+192                %abort;
+193            %end;
+194        
+5                                           The SAS System                  15:33 Monday, May 18, 2026
+
+195            /**Set output file path**/
+196            /**When name_dir is provided (XPT-to-SAS conversion scenario), use it for   **/
+197            /**deriving the path segments in the output filename so the name reflects    **/
+198            /**the original study directory rather than the DAC_SDTM conversion folder. **/
+199            /**Use both \ and / as path delimiters to handle Windows and Unix paths.    **/
+200            %local out_file g_parent gg_parent ggg_parent name_path;
+201            %if %length(%superq(name_dir)) > 0 %then %let name_path = &name_dir;
+202            %else %let name_path = &indir;
+203            %let g_parent = %scan(&name_path, -1, \/);
+204            %let gg_parent = %scan(&name_path, -2, \/);
+205            %let ggg_parent = %scan(&name_path, -3, \/);
+206            %let out_file =
+206      ! &doc_dir\variable_info_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka
+206      ! ))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
+207            %put DEBUG: Output file = &out_file;
+208        
+209            /**Get variable information**/
+210            ods output variables=allvarout;
+211        
+212            proc contents data=INLIB._all_ memtype=data;
+213            run;
+214        
+215            /**Sort data by dataset and variable number**/
+216            proc sort data=allvarout;
+217                by member num;
+218            run;
+219        
+220            /**Rename variant column names to standard desired names**/
+221            /**If a variant column name is found AND the target standard name does    **/
+222            /**not already exist, the column is renamed to the standard name.        **/
+223            %local rename_pairs renamed_log;
+224            %let rename_pairs = ;
+225            %let renamed_log = ;
+226        
+227            data _col_map_;
+228                length variant $32 standard $32;
+229                /* NUM variants (underscore-separated) */
+230                variant='VARIABLE_NUMBER'; standard='NUM'; output;
+231                variant='VAR_NUM';         standard='NUM'; output;
+232                variant='VAR_NO';          standard='NUM'; output;
+233                variant='NUMBER';          standard='NUM'; output;
+234                variant='NO';              standard='NUM'; output;
+235                /* NUM variants (space-separated — VALIDVARNAME=ANY) */
+236                variant='VARIABLE NUMBER'; standard='NUM'; output;
+237                variant='VAR NUM';         standard='NUM'; output;
+238                variant='VAR NO';          standard='NUM'; output;
+239                /* VARIABLE variants (underscore-separated) */
+240                variant='VARIABLE_NAME';   standard='VARIABLE'; output;
+241                variant='VAR_NAME';        standard='VARIABLE'; output;
+242                variant='NAME';            standard='VARIABLE'; output;
+243                /* VARIABLE variants (space-separated — VALIDVARNAME=ANY) */
+244                variant='VARIABLE NAME';   standard='VARIABLE'; output;
+245                variant='VAR NAME';        standard='VARIABLE'; output;
+246                /* TYPE variants (underscore-separated) */
+6                                           The SAS System                  15:33 Monday, May 18, 2026
+
+247                variant='VAR_TYPE';        standard='TYPE'; output;
+248                variant='DATA_TYPE';       standard='TYPE'; output;
+249                variant='VARIABLE_TYPE';   standard='TYPE'; output;
+250                /* TYPE variants (space-separated — VALIDVARNAME=ANY) */
+251                variant='VAR TYPE';        standard='TYPE'; output;
+252                variant='DATA TYPE';       standard='TYPE'; output;
+253                variant='VARIABLE TYPE';   standard='TYPE'; output;
+254                /* LEN variants */
+255                variant='LENGTH';          standard='LEN'; output;
+256                variant='SIZE';            standard='LEN'; output;
+257                /* POS variants (underscore-separated) */
+258                variant='POSITION';        standard='POS'; output;
+259                variant='START_POSITION';  standard='POS'; output;
+260                variant='COLUMN_POSITION'; standard='POS'; output;
+261                variant='START';           standard='POS'; output;
+262                /* POS variants (space-separated — VALIDVARNAME=ANY) */
+263                variant='START POSITION';  standard='POS'; output;
+264                variant='COLUMN POSITION'; standard='POS'; output;
+265                /* LABEL variants (underscore-separated) */
+266                variant='VARIABLE_LABEL';  standard='LABEL'; output;
+267                variant='VAR_LABEL';       standard='LABEL'; output;
+268                variant='DESCRIPTION';     standard='LABEL'; output;
+269                variant='DESC';            standard='LABEL'; output;
+270                /* LABEL variants (space-separated — VALIDVARNAME=ANY) */
+271                variant='VARIABLE LABEL';  standard='LABEL'; output;
+272                variant='VAR LABEL';       standard='LABEL'; output;
+273            run;
+274        
+275            proc sql noprint;
+276                /* Build rename pairs: only rename if variant exists and target does not.
+277                   Use the actual column name from dictionary.columns (b.name) for the
+278                   left side of the rename pair.  Wrap names containing spaces in SAS
+279                   name literals ('name'n) so PROC DATASETS RENAME works correctly
+280                   under VALIDVARNAME=ANY. */
+281                select case
+282                           when indexc(strip(b.name), ' ') > 0
+283                           then cats("'", strip(b.name), "'n=", a.standard)
+284                           else cats(strip(b.name), '=', a.standard)
+285                       end
+286                    into :rename_pairs separated by ' '
+287                from _col_map_ a
+288                inner join dictionary.columns b
+289                    on upcase(b.name) = upcase(a.variant)
+290                    and b.libname = 'WORK' and b.memname = 'ALLVAROUT'
+291                where upcase(a.standard) not in (
+292                    select upcase(name) from dictionary.columns
+293                    where libname = 'WORK' and memname = 'ALLVAROUT'
+294                );
+295        
+296                /* Build human-readable log of renames */
+297                select catx(' -> ', strip(b.name), a.standard)
+298                    into :renamed_log separated by ', '
+299                from _col_map_ a
+300                inner join dictionary.columns b
+7                                           The SAS System                  15:33 Monday, May 18, 2026
+
+301                    on upcase(b.name) = upcase(a.variant)
+302                    and b.libname = 'WORK' and b.memname = 'ALLVAROUT'
+303                where upcase(a.standard) not in (
+304                    select upcase(name) from dictionary.columns
+305                    where libname = 'WORK' and memname = 'ALLVAROUT'
+306                );
+307            quit;
+308        
+309            %if %length(&rename_pairs) > 0 %then %do;
+310                proc datasets library=work nolist nodetails;
+311                    modify allvarout;
+312                    rename &rename_pairs;
+313                quit;
+314                %put DEBUG: Renamed variant columns to standard names: &renamed_log;
+315                %put NOTE: ************************************************************;
+316                %put NOTE: *** Columns renamed to standard names: &renamed_log ***;
+317                %put NOTE: ************************************************************;
+318            %end;
+319            %else %do;
+320                %put DEBUG: No variant column names found - all columns already use standard names;
+321            %end;
+322        
+323            proc datasets library=work nolist nodetails;
+324                delete _col_map_;
+325            quit;
+326        
+327            /**Identify and drop columns not in the desired list**/
+328            /**Desired output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL       **/
+329            /**MEMBER is retained for BY-group processing but excluded from output.**/
+330            %local drop_cols;
+331            proc contents data=allvarout out=_colinfo_(keep=name) noprint;
+332            run;
+333        
+334            proc sql noprint;
+335                select upcase(name) into :drop_cols separated by ' '
+336                from _colinfo_
+337                where upcase(name) not in ('NUM', 'VARIABLE', 'TYPE', 'LEN', 'POS', 'LABEL',
+337      ! 'MEMBER');
+338            quit;
+339        
+340            %let drop_cols = %sysfunc(strip(&drop_cols));
+341        
+342            %if %length(&drop_cols) > 0 %then %do;
+343                %put DEBUG: Dropping columns not in desired list: &drop_cols;
+344                %put NOTE: ************************************************************;
+345                %put NOTE: *** Columns dropped from output: &drop_cols ***;
+346                %put NOTE: ************************************************************;
+347                data allvarout;
+348                    set allvarout(drop=&drop_cols);
+349                run;
+350            %end;
+351            %else %do;
+352                %put DEBUG: No columns to drop - all columns are in the desired list;
+353            %end;
+8                                           The SAS System                  15:33 Monday, May 18, 2026
+
+354        
+355            proc datasets library=work nolist nodetails;
+356                delete _colinfo_;
+357            quit;
+358        
+359            /**Create Excel output file with separate sheets per dataset**/
+360            /**Output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL              **/
+361            options nobyline;
+362            ods excel file="&out_file"
+363                options(sheet_name="#BYVAL(member)" embedded_titles='yes');
+364        
+365            proc report data=allvarout nowindows headline;
+366                columns num variable type len pos label;
+367                define num      / display 'Num'
+368                                  style(header)=[just=center]
+369                                  style(column)=[cellwidth=0.9in just=center];
+370                define variable / display 'Variable'
+371                                  style(header)=[just=center]
+372                                  style(column)=[cellwidth=1.5in just=center];
+373                define type     / display 'Type'
+374                                  style(header)=[just=center]
+375                                  style(column)=[cellwidth=0.75in just=center];
+376                define len      / display 'Len'
+377                                  style(header)=[just=center]
+378                                  style(column)=[cellwidth=0.75in just=center];
+379                define pos      / display 'Pos'
+380                                  style(header)=[just=center]
+381                                  style(column)=[cellwidth=0.9in just=center];
+382                define label    / display 'Label'
+383                                  style(header)=[just=center]
+384                                  style(column)=[cellwidth=3in just=center];
+385                by member;
+386                title "Variables in #BYVAL(member) Dataset";
+387            run;
+388        
+389            title;
+390        
+391            ods excel close;
+392        
+393            /**Clean up**/
+394            proc datasets library=work nolist nodetails;
+395                delete allvarout;
+396            quit;
+397        
+398            libname INLIB clear;
+399        
+400            %put NOTE: Variable information document created: &out_file;
+401        
+402        %mend variable_info_cli;
+403        
+404        %variable_info_cli;
+DEBUG: Raw SYSPARM value = 
+E:\output/DAC_SAS|E:\output|name_dir=C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20
+250808\DAC_SAS
+9                                           The SAS System                  15:33 Monday, May 18, 2026
+
+DEBUG: Pipe position = 18
+DEBUG: Input Directory = E:\output/DAC_SAS
+DEBUG: Output Directory = E:\output
+DEBUG: Input directory exists = 1
+DEBUG: Output directory exists = 1
+DEBUG: Creating directory E:\output\DAC_Documents
+DEBUG: Successfully created E:\output\DAC_Documents
+NOTE: Libref INLIB was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: E:\output\DAC_SAS
+DEBUG: Output file = 
+E:\output\DAC_Documents\variable_info_EnyoTestData_NASHBERKELEY_DACSAS_20260518.xlsx
+
+NOTE: PROCEDURE CONTENTS used (Total process time):
+      real time           0.07 seconds
+      cpu time            0.04 seconds
+      
+NOTE: The data set WORK.ALLVAROUT has 663 observations and 7 variables.
+NOTE: The PROCEDURE CONTENTS printed pages 1-51.
+
+
+NOTE: There were 663 observations read from the data set WORK.ALLVAROUT.
+NOTE: The data set WORK.ALLVAROUT has 663 observations and 7 variables.
+NOTE: PROCEDURE SORT used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: The data set WORK._COL_MAP_ has 33 observations and 2 variables.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: No rows were selected.
+NOTE: No rows were selected.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+DEBUG: No variant column names found - all columns already use standard names
+
+NOTE: Deleting WORK._COL_MAP_ (memtype=DATA).
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: The data set WORK._COLINFO_ has 7 observations and 1 variables.
+NOTE: PROCEDURE CONTENTS used (Total process time):
+      real time           0.00 seconds
+10                                          The SAS System                  15:33 Monday, May 18, 2026
+
+      cpu time            0.01 seconds
+      
+
+NOTE: No rows were selected.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+ERROR: The function STRIP referenced by the %SYSFUNC or %QSYSFUNC macro function has too few 
+       arguments.
+DEBUG: No columns to drop - all columns are in the desired list
+
+NOTE: SAS set option OBS=0 and will continue to check statements. 
+      This might cause NOTE: No observations in data set.
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE REPORT used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+NOTE: Writing EXCEL file: 
+      E:\output\DAC_Documents\variable_info_EnyoTestData_NASHBERKELEY_DACSAS_20260518.xlsx
+
+
+NOTE: PROCEDURE DATASETS used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Libref INLIB has been deassigned.
+NOTE: Variable information document created: 
+E:\output\DAC_Documents\variable_info_EnyoTestData_NASHBERKELEY_DACSAS_20260518.xlsx
+ERROR: Errors printed on page 10.
+
+NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
+NOTE: The SAS System used:
+      real time           1.27 seconds
+      cpu time            0.85 seconds
+      
