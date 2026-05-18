@@ -16,14 +16,14 @@
 | 2026-03-28: Column formatting update
 |   - Dropped FORMAT and INFORMAT columns from output to match the
 |     column selection logic in metadata_to_dict_cli20260320.py
-|   - Enforced column order: NUM, VARIABLE, TYPE, LEN, LABEL
+|   - Enforced column order: NUM, VARIABLE, TYPE, LEN, POS, LABEL
 |   - Switched from PROC PRINT to PROC REPORT to enable per-column
 |     width formatting in the Excel workbook output
 |   - Centered alignment on all columns (header and data cells)
 |   - Added variant column-name renaming (mirrors col_rename_map in
 |     metadata_to_dict_cli20260320.py): variant column names such as
 |     LENGTH, VARIABLE_NAME, VAR_NUM, etc. are normalized to the
-|     standard desired names (NUM, VARIABLE, TYPE, LEN, LABEL) before
+|     standard desired names (NUM, VARIABLE, TYPE, LEN, POS, LABEL) before
 |     any columns are dropped, with DEBUG/NOTE logging for renames
 |   - Added dynamic column-drop logic: any column not in the desired
 |     list is removed from the dataset before output, with DEBUG
@@ -39,6 +39,7 @@
 |       VARIABLE <- VARIABLE NAME, VAR NAME
 |       TYPE     <- VAR TYPE, DATA TYPE, VARIABLE TYPE
 |       LEN      <- (no space variants needed)
+|       POS      <- POSITION, START POSITION, COLUMN POSITION, START
 |       LABEL    <- VARIABLE LABEL, VAR LABEL
 |   - Updated rename SQL to use SAS name literals ('name'n) for any
 |     column names containing spaces, so PROC DATASETS RENAME works
@@ -47,11 +48,11 @@
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
 | designated directory. For each dataset the report lists variable
-| number, name, type, length, and label. Results are exported to a
+| number, name, type, length, position, and label. Results are exported to a
 | multi-sheet Excel workbook (.xlsx) in the DAC_Documents subfolder
 | of the output directory, with one sheet per dataset.
 | Column selection and ordering mirrors the logic in
-| metadata_to_dict_cli20260320.py (NUM, VARIABLE, TYPE, LEN, LABEL).
+| metadata_to_dict_cli20260320.py (NUM, VARIABLE, TYPE, LEN, POS, LABEL).
 |
 | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to the folder containing SAS datasets
@@ -94,7 +95,7 @@
 
 %macro variable_info_cli;
     /**Force V7 variable naming so PROC CONTENTS ODS output uses standard**/
-    /**column names (Num, Variable, Type, Len, Label) instead of the     **/
+    /**column names (Num, Variable, Type, Len, Pos, Label) instead of the **/
     /**space-containing names produced under VALIDVARNAME=ANY             **/
     /**(e.g. 'Variable Number' instead of 'Num').                        **/
     options validvarname=v7;
@@ -257,6 +258,14 @@
         /* LEN variants */
         variant='LENGTH';          standard='LEN'; output;
         variant='SIZE';            standard='LEN'; output;
+        /* POS variants (underscore-separated) */
+        variant='POSITION';        standard='POS'; output;
+        variant='START_POSITION';  standard='POS'; output;
+        variant='COLUMN_POSITION'; standard='POS'; output;
+        variant='START';           standard='POS'; output;
+        /* POS variants (space-separated — VALIDVARNAME=ANY) */
+        variant='START POSITION';  standard='POS'; output;
+        variant='COLUMN POSITION'; standard='POS'; output;
         /* LABEL variants (underscore-separated) */
         variant='VARIABLE_LABEL';  standard='LABEL'; output;
         variant='VAR_LABEL';       standard='LABEL'; output;
@@ -320,7 +329,7 @@
     quit;
 
     /**Identify and drop columns not in the desired list**/
-    /**Desired output columns: NUM, VARIABLE, TYPE, LEN, LABEL            **/
+    /**Desired output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL       **/
     /**MEMBER is retained for BY-group processing but excluded from output.**/
     /**This mirrors the column-drop logic in metadata_to_dict_cli20260320.py**/
     %local drop_cols;
@@ -330,7 +339,7 @@
     proc sql noprint;
         select upcase(name) into :drop_cols separated by ' '
         from _colinfo_
-        where upcase(name) not in ('NUM', 'VARIABLE', 'TYPE', 'LEN', 'LABEL', 'MEMBER');
+        where upcase(name) not in ('NUM', 'VARIABLE', 'TYPE', 'LEN', 'POS', 'LABEL', 'MEMBER');
     quit;
 
     %let drop_cols = %sysfunc(strip(&drop_cols));
@@ -354,14 +363,14 @@
 
     /**Create Excel output file with separate sheets per dataset**/
     /**Column selection and ordering mirrors metadata_to_dict_cli20260320.py:**/
-    /**  desired_columns = [NUM, VARIABLE, TYPE, LEN, LABEL]                 **/
+    /**  desired_columns = [NUM, VARIABLE, TYPE, LEN, POS, LABEL]            **/
     /**  FORMAT and INFORMAT are excluded to match Python output logic.       **/
     options nobyline;
     ods excel file="&out_file"
         options(sheet_name="#BYVAL(member)" embedded_titles='yes');
 
     proc report data=allvarout nowindows headline;
-        columns num variable type len label;
+        columns num variable type len pos label;
         define num      / display 'Num'
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.9in just=center];
@@ -374,6 +383,9 @@
         define len      / display 'Len'
                           style(header)=[just=center]
                           style(column)=[cellwidth=0.75in just=center];
+        define pos      / display 'Pos'
+                          style(header)=[just=center]
+                          style(column)=[cellwidth=0.9in just=center];
         define label    / display 'Label'
                           style(header)=[just=center]
                           style(column)=[cellwidth=3in just=center];
