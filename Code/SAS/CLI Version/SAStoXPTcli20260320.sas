@@ -24,7 +24,7 @@
 | and placed in OUTDIR\DAC_XPT. When .xpt files are detected they
 | are converted to .sas7bdat and placed in OUTDIR\DAC_SDTM. Both
 | conversion types may occur in a single run. An error log
-| (xpt_error_log.txt) is written to the output directory.
+| (xpt_error_log.txt) is written to the DAC_Logs subdirectory.
 |
 | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
@@ -49,7 +49,8 @@
 |   output_directory\
 |   ├── DAC_XPT\          - XPT exports (from .sas7bdat input)
 |   ├── DAC_SDTM\         - SAS7BDAT exports (from .xpt input)
-|   └── xpt_error_log.txt - Conversion activity and error log
+|   └── DAC_Logs\
+|       └── xpt_error_log.txt - Conversion activity and error log
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
 | SAS v9.4 or Higher: Yes
@@ -107,7 +108,18 @@
         %abort;
     %end;
 
-    %let errlog = &outdir\xpt_error_log.txt;
+    /* Create DAC_Logs subfolder if it does not exist */
+    %let dac_logs_dir = &outdir\DAC_Logs;
+    %let dac_logs_exist = %sysfunc(fileexist(&dac_logs_dir));
+    %if &dac_logs_exist = 0 %then %do;
+        %let rc = %sysfunc(dcreate(DAC_Logs, &outdir));
+        %if &rc = %then %do;
+            %put ERROR: Failed to create directory &dac_logs_dir;
+            %abort;
+        %end;
+    %end;
+
+    %let errlog = &outdir\DAC_Logs\xpt_error_log.txt;
 
     data _null_;
         file "&errlog";
