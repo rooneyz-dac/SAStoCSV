@@ -25,7 +25,7 @@
 # Options:
 #   --trial-name=NAME
 #       Name used for the trial dictionary output file.
-#       Default: grandparent folder name of the input directory.
+#       Default: TRAILNAME segment of the input path (.../PROVIDER/TRAILNAME/DATASET).
 #
 #   --format=long|condensed|wide
 #       Controls how variables are listed in each dataset summary tab.
@@ -151,6 +151,13 @@
 #     - Before the pipeline begins, if any DAC_* subfolder already exists in
 #       OUTPUT_DIR the user is shown the list and prompted to confirm before
 #       continuing; answering anything other than y/yes aborts the run.
+#   1.6 (2026-05-19): Fix TRIAL_NAME derivation to use TRAILNAME segment
+#     - Input path format is .../PROVIDER/TRAILNAME/DATASET.
+#     - TRIAL_NAME is now derived from the parent of INPUT_DIR (TRAILNAME),
+#       not the grandparent (PROVIDER).  Previously the logic walked two levels
+#       up (grandparent), producing PROVIDER instead of TRAILNAME.
+#     - Documentation filenames in DAC_Documents continue to follow the
+#       FILENAME_PROVIDER_TRAILNAME_DATASET_DATE convention via ggg/gg/g_parent.
 #
 # Notes:
 #   - Script exits on first error (set -e)
@@ -221,7 +228,7 @@ detailed_help() {
     echo "      DAC_Documents/dictionary_*.xlsx"
     echo "    Effect: Sets the trial identifier passed to the dictionary builder."
     echo "      The value is uppercased and logged during step [7/7]. Defaults to"
-    echo "      the grandparent folder name of the input directory if not provided."
+    echo "      the TRAILNAME segment of the input path (.../PROVIDER/TRAILNAME/DATASET)."
     echo ""
     echo "  --format=long|condensed|wide"
     echo "    Used by:"
@@ -586,21 +593,22 @@ if [ -z "$INPUT_DIR" ]; then
     usage
 fi
 
-# Default TRIAL_NAME to grandparent folder name of INPUT_DIR if not provided;
-# fall back to current date when the path is too shallow to have a grandparent.
+# Default TRIAL_NAME to the TRAILNAME segment of INPUT_DIR if not provided.
+# The input path format is .../PROVIDER/TRAILNAME/DATASET, so TRAILNAME is
+# the parent directory of INPUT_DIR (one level up from the leaf/DATASET).
+# Falls back to the current date if the path is too shallow to have a parent.
 if [ -z "$TRIAL_NAME" ]; then
+    # Strip the leaf (DATASET) to get .../PROVIDER/TRAILNAME
     _tn_parent="${INPUT_DIR%/*}"
     if [ "$_tn_parent" = "$INPUT_DIR" ]; then
+        # No forward slash found; fall back to Windows backslash separator
         _tn_parent="${INPUT_DIR%\\*}"
     fi
-    _tn_grand="${_tn_parent%/*}"
-    if [ "$_tn_grand" = "$_tn_parent" ]; then
-        _tn_grand="${_tn_parent%\\*}"
-    fi
-    if [[ "$_tn_grand" == */* ]]; then
-        TRIAL_NAME="${_tn_grand##*/}"
+    # Extract the last segment of _tn_parent, which is TRAILNAME
+    if [[ "$_tn_parent" == */* ]]; then
+        TRIAL_NAME="${_tn_parent##*/}"
     else
-        TRIAL_NAME="${_tn_grand##*\\}"
+        TRIAL_NAME="${_tn_parent##*\\}"
     fi
     if [ -z "$TRIAL_NAME" ]; then
         TRIAL_NAME=$(date +%Y%m%d)
