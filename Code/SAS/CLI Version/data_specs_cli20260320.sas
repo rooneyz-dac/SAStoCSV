@@ -13,6 +13,12 @@
 |   - Added path validation
 | 2026-03-20: Extended SYSPARM to support optional macro parameters
 |   - Optional params passed as key=value pairs after output dir
+| 2026-05-19: Fixed dcreate return-value check
+|   - Replaced `%if &rc = %then` with `%if %length(&rc) = 0 %then`
+|     for the DAC_Documents directory-creation guard. dcreate returns
+|     the new directory name on success, causing %EVAL to abort with
+|     a numeric-operand error when the directory was successfully
+|     created.
 | See original data_specs macro for prior version history.
 *------------------------------------------------------------------*
 | PURPOSE
@@ -226,7 +232,7 @@
     %if &doc_exist = 0 %then %do;
         %put DEBUG: Creating directory &doc_dir;
         %let rc = %sysfunc(dcreate(DAC_Documents, &outdir));
-        %if &rc = %then %do;
+        %if %length(&rc) = 0 %then %do;
             %put ERROR: Failed to create directory &doc_dir;
             %goto errhandl;
         %end;

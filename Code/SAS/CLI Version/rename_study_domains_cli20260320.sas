@@ -6,7 +6,7 @@
 *------------------------------------------------------------------*
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2026-05-08
-| VERSION      : 1.3
+| VERSION      : 1.4
 *------------------------------------------------------------------*
 | VERSION UPDATES:
 | 2026-05-08: Initial CLI release (v1.0)
@@ -39,6 +39,12 @@
 |     ParentFolderName is the leaf segment of the input directory
 |     (e.g. if input is C:\data\rawdata, folder becomes DAC_rawdata).
 |   - Handles both Windows backslash and Unix forward slash separators.
+| 2026-05-19: Fixed dcreate return-value check (v1.4)
+|   - Replaced `%if &_rc = %then` with `%if %length(&_rc) = 0 %then`
+|     for both directory-creation guards (DAC_<ParentFolderName> and
+|     DAC_XPT). dcreate returns the new directory name on success,
+|     causing %EVAL to abort with a numeric-operand error when the
+|     directory was successfully created.
 *------------------------------------------------------------------*
 | PURPOSE
 | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
@@ -277,7 +283,7 @@
             %if &dac_sas_exist = 0 %then %do;
                 %put NOTE: Creating directory &dac_sas_dir;
                 %let _rc = %sysfunc(dcreate(&dac_sas_folder, &outdir));
-                %if &_rc = %then %do;
+                %if %length(&_rc) = 0 %then %do;
                     %put ERROR: Failed to create directory &dac_sas_dir;
                     libname _inlib clear;
                     %abort;
@@ -392,7 +398,7 @@
             %if &dac_xpt_exist = 0 %then %do;
                 %put NOTE: Creating directory &dac_xpt_dir;
                 %let _rc = %sysfunc(dcreate(DAC_XPT, &outdir));
-                %if &_rc = %then %do;
+                %if %length(&_rc) = 0 %then %do;
                     %put ERROR: Failed to create directory &dac_xpt_dir;
                     %abort;
                 %end;

@@ -31,6 +31,12 @@
 |   - Wrapped %sysfunc(strip(&drop_cols)) in a %length > 0 guard to
 |     prevent "too few arguments" ERROR when all columns are already
 |     in the desired list and drop_cols is empty
+| 2026-05-19: Fixed dcreate return-value check
+|   - Replaced `%if &rc = %then` with `%if %length(&rc) = 0 %then`
+|     for the DAC_Documents directory-creation guard. dcreate returns
+|     the new directory name on success, causing %EVAL to abort with
+|     a numeric-operand error when the directory was successfully
+|     created.
 | 2026-03-29: Column name variant fix
 |   - Added OPTIONS VALIDVARNAME=V7 to force standard V7 column names
 |     in PROC CONTENTS ODS output (prevents space-containing names
@@ -178,7 +184,7 @@
     %if &doc_exist = 0 %then %do;
         %put DEBUG: Creating directory &doc_dir;
         %let rc = %sysfunc(dcreate(DAC_Documents, &outdir));
-        %if &rc = %then %do;
+        %if %length(&rc) = 0 %then %do;
             %put ERROR: Failed to create directory &doc_dir;
             %abort;
         %end;

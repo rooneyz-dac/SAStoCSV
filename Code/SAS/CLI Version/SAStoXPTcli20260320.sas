@@ -5,7 +5,7 @@
 *------------------------------------------------------------------*
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-11-21
-| VERSION      : 2.0
+| VERSION      : 2.1
 *------------------------------------------------------------------*
 | VERSION UPDATES:
 | 2025-11-21: Initial CLI release (v2.0)
