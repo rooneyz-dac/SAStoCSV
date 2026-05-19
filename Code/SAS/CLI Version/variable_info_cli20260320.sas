@@ -207,7 +207,7 @@
     %let g_parent = %scan(&name_path, -1, \/);
     %let gg_parent = %scan(&name_path, -2, \/);
     %let ggg_parent = %scan(&name_path, -3, \/);
-    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\variable_info_%sysfunc(compress(&ggg_parent,'_',ka))_%sysfunc(compress(&gg_parent,'_',ka))_%sysfunc(compress(&g_parent,'_',ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**Get variable information**/

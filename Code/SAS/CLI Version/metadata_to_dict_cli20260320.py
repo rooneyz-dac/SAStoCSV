@@ -25,8 +25,8 @@ Behavior:
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.csv`
         `DAC_Documents/dictionary_{GGG_PARENT}_{GG_PARENT}_{G_PARENT}_{YYYYMMDD}.xlsx`
     where GGG_PARENT, GG_PARENT, and G_PARENT are the third-to-last, second-to-last,
-    and last segments of the input directory path (alphanumeric characters only,
-    matching the SAS compress(...,,ka) convention — e.g. "C:" becomes "C").
+    and last segments of the input directory path (alphanumeric characters and
+    underscores only — e.g. "C:" becomes "C", and "my_trial" stays "my_trial").
     This matches the naming convention used by variable_info_cli20260320.sas.
 
 Exit codes:
@@ -52,6 +52,8 @@ ChangeLog:
     2026-03-30  Switched argument parsing to argparse.
     2026-05-18  Added SOURCE_TAB column: each row is tagged with the sheet name it was read
                 from, so the dictionary output retains a reference to the variable info tab.
+    2026-05-19  Preserve underscores in path segment components (PROVIDER, TRIALNAME, DATASET)
+                so output filenames match the FILENAME_PROVIDER_TRIALNAME_DATASET convention.
 """
 
 import argparse
@@ -164,13 +166,14 @@ def main():
     # Derive parent directory components from the input directory (if provided) or fall
     # back to the output base directory.  Using the input directory matches the SAS
     # variable_info naming convention: variable_info_GGG_GG_G_DATE.xlsx.
-    # Keep only alphanumeric characters in each part to ensure valid filenames on all
-    # platforms (e.g. the Windows drive letter "C:" becomes "C", matching SAS compress(...,,ka)).
+    # Keep only alphanumeric characters and underscores in each part to ensure valid
+    # filenames on all platforms while preserving underscores that are part of path
+    # segment names (e.g. the Windows drive letter "C:" becomes "C").
     naming_dir = input_dir if input_dir is not None else output_base_dir
     path_parts = [p for p in naming_dir.replace('\\', '/').split('/') if p]
-    g_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-1]) if len(path_parts) >= 1 else ''
-    gg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-2]) if len(path_parts) >= 2 else ''
-    ggg_parent = re.sub(r'[^a-zA-Z0-9]', '', path_parts[-3]) if len(path_parts) >= 3 else ''
+    g_parent = re.sub(r'[^a-zA-Z0-9_]', '', path_parts[-1]) if len(path_parts) >= 1 else ''
+    gg_parent = re.sub(r'[^a-zA-Z0-9_]', '', path_parts[-2]) if len(path_parts) >= 2 else ''
+    ggg_parent = re.sub(r'[^a-zA-Z0-9_]', '', path_parts[-3]) if len(path_parts) >= 3 else ''
     csv_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.csv")
     excel_output_path = os.path.join(dac_documents_dir, f"dictionary_{ggg_parent}_{gg_parent}_{g_parent}_{date_stamp}.xlsx")
 
