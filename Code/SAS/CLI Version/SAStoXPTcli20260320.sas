@@ -5,7 +5,7 @@
 *------------------------------------------------------------------*
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-11-21
-| VERSION      : 2.0
+| VERSION      : 2.1
 *------------------------------------------------------------------*
 | VERSION UPDATES:
 | 2025-11-21: Initial CLI release (v2.0)
@@ -16,6 +16,15 @@
 | 2026-03-20: File standardized to 20260320 naming convention
 |   - No functional changes; header and filename updated to match
 |     the pipeline versioning convention used across all CLI scripts
+| 2026-05-19: Fixed dcreate return-value check (v2.1)
+|   - Replaced `%if &rc = %then` with `%if %length(&rc) = 0 %then`
+|     for all three directory-creation guards (DAC_Logs, DAC_XPT,
+|     DAC_SDTM). dcreate returns the new directory name (a string)
+|     on success, causing %EVAL to abort with "character operand
+|     found where numeric operand required" when the %if condition
+|     tried to compare that string numerically. Using %length()
+|     correctly detects an empty return value (failure) without
+|     triggering a numeric-evaluation error.
 *------------------------------------------------------------------*
 | PURPOSE
 | Performs batch bidirectional conversion of SAS datasets between
@@ -113,7 +122,7 @@
     %let dac_logs_exist = %sysfunc(fileexist(&dac_logs_dir));
     %if &dac_logs_exist = 0 %then %do;
         %let rc = %sysfunc(dcreate(DAC_Logs, &outdir));
-        %if &rc = %then %do;
+        %if %length(&rc) = 0 %then %do;
             %put ERROR: Failed to create directory &dac_logs_dir;
             %abort;
         %end;
@@ -158,7 +167,7 @@
         %if &xpt_exist = 0 %then %do;
             %put DEBUG: Creating directory &xpt_dir;
             %let rc = %sysfunc(dcreate(DAC_XPT, &outdir));
-            %if &rc = %then %do;
+            %if %length(&rc) = 0 %then %do;
                 %put ERROR: Failed to create directory &xpt_dir;
                 %abort;
             %end;
@@ -217,7 +226,7 @@
         %if &sdtm_exist = 0 %then %do;
             %put DEBUG: Creating directory &sdtm_dir;
             %let rc = %sysfunc(dcreate(DAC_SDTM, &outdir));
-            %if &rc = %then %do;
+            %if %length(&rc) = 0 %then %do;
                 %put ERROR: Failed to create directory &sdtm_dir;
                 %abort;
             %end;

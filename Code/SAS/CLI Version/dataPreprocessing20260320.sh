@@ -102,7 +102,7 @@
 #
 # Requirements:
 #   - SAS Foundation 9.4 installed at default location
-#   - Python 3.x with pandas
+#   - Python 3.8+ with pandas and openpyxl
 #   - Bash shell (Git Bash on Windows)
 #   - Required SAS scripts in same directory:
 #     * rename_study_domains_cli20260320.sas
@@ -116,7 +116,7 @@
 #
 # Author: DAC Development Team
 # Created: 2025-11-22
-# Version: 1.5
+# Version: 1.6
 #
 # Version History:
 #   1.0 (2025-11-22): Initial release
