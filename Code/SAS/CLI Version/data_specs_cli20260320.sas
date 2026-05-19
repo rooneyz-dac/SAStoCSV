@@ -256,7 +256,7 @@
     %let gg_parent = %scan(&name_path, -2, \/);
     %let ggg_parent = %scan(&name_path, -3, \/);
     %let libname_text = &g_parent;
-    %let out_file = &doc_dir\data_specs_%sysfunc(compress(&ggg_parent,,ka))_%sysfunc(compress(&gg_parent,,ka))_%sysfunc(compress(&g_parent,,ka))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\data_specs_%sysfunc(compress(&ggg_parent,'_',ka))_%sysfunc(compress(&gg_parent,'_',ka))_%sysfunc(compress(&g_parent,'_',ka))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**See if the listing output is turned on**/
