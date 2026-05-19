@@ -31,15 +31,16 @@ Automated pipeline that standardizes SAS dataset names, converts between SAS for
 ## Quick Start
 
 ```bash
-# Minimal — uses E:/output as the default output directory
-./dataPreprocessing20260320.sh -i "C:/data/input"
+# Minimal — output defaults to the grandparent of the input directory
+# (e.g. -i "C:/studies/SampleStudy/rawdata" → output goes to "C:/studies/SampleStudy")
+./dataPreprocessing20260320.sh -i "C:/studies/SampleStudy/rawdata"
 
-# Specify input and output directories
-./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output"
+# Specify input and output directories explicitly
+./dataPreprocessing20260320.sh -i "C:/studies/SampleStudy/rawdata" -o "C:/data/output"
 
 # Full example with optional flags
 ./dataPreprocessing20260320.sh \
-  -i "C:/data/input" \
+  -i "C:/studies/SampleStudy/rawdata" \
   -o "C:/data/output" \
   --trial-name=SampleStudy \
   --format=wide \
@@ -61,7 +62,7 @@ Automated pipeline that standardizes SAS dataset names, converts between SAS for
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-o <output_dir>` | `E:/output` | Root directory where all output subdirectories are created |
+| `-o <output_dir>` | Grandparent of input directory | Root directory where all output subdirectories are created |
 | `-H`, `--detailed-help` | — | Show per-flag detail: which scripts use it, which files it affects |
 | `-h`, `--help` | — | Show concise usage summary |
 
@@ -85,7 +86,7 @@ Automated pipeline that standardizes SAS dataset names, converts between SAS for
 
 ```
 output_directory/
-├── DAC_SAS/                    - Standardized SAS datasets (step 1, only if any dataset was renamed)
+├── DAC_<ParentFolderName>/         - Standardized SAS datasets (step 1, only if any dataset was renamed)
 ├── DAC_XPT/                    - XPT exports from .sas7bdat input (step 2)
 │                                 or standardized XPT copies (step 1)
 ├── DAC_SDTM/                   - SAS7BDAT datasets converted from .xpt input (step 2)
@@ -117,7 +118,7 @@ output_directory/
 
 Scans the input directory and standardizes dataset names by extracting the portion **after the last underscore** (e.g., `BERKELEY_AE` → `AE`, `AE_PLACEBO` → `PLACEBO`). When any dataset requires renaming, **all** datasets of that type are copied to a new subfolder with standardized names:
 
-- `.sas7bdat` files → `DAC_SAS/`
+- `.sas7bdat` files → `DAC_<ParentFolderName>/` (where `<ParentFolderName>` is the leaf segment of the input directory)
 - `.xpt` files → `DAC_XPT/`
 
 If no datasets need renaming, no new folder is created and the original input directory is used for all subsequent steps.
@@ -170,6 +171,8 @@ Output: `DAC_Documents/dictionary_<GGG>_<GG>_<G>_<YYYYMMDD>.csv` and `.xlsx`
 ## Notes
 
 - The pipeline exits immediately on the first error (`set -e`).
-- If step 1 standardizes dataset names, `INPUT_DIR` is automatically redirected to `DAC_SAS` or `DAC_XPT` for all subsequent steps; the original path segments are preserved in documentation filenames via `NAME_DIR`.
+- If step 1 standardizes dataset names, `INPUT_DIR` is automatically redirected to `DAC_<ParentFolderName>` or `DAC_XPT` for all subsequent steps; the original path segments are preserved in documentation filenames via `NAME_DIR`.
+- When `-o` is omitted, the output directory defaults to the **grandparent** of the input directory (e.g. `-i "C:/studies/SampleStudy/rawdata"` → output in `C:/studies/SampleStudy`).
+- If any `DAC_*` subfolder already exists in the output directory, the pipeline lists them and prompts for confirmation before proceeding. Entering anything other than `y` or `yes` aborts the run without modifying any files.
 - `pipeline_vars.env` is written after every run and exports `VARIABLE_INFO_FILE` and `TRIAL_NAME` for use by downstream scripts.
 - `pipeline_change_log.txt` records every file created by each step, sorted by step, with timestamps.
