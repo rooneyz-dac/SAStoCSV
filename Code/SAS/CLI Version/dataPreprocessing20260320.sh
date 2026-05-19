@@ -18,7 +18,7 @@
 #
 # Flags:
 #   -i input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
-#   -o output_directory - Path where outputs and documentation will be saved [optional, default: E:\output]
+#   -o output_directory - Path where outputs and documentation will be saved [optional, default: grandparent of input directory]
 #   -H, --detailed-help - Display detailed help showing which scripts use each flag,
 #                         which output files are affected, and the effect of each option
 #
@@ -72,16 +72,16 @@
 #       1           - Save SAS listing files to the output directory.
 #
 # Examples:
-#   ./dataPreprocessing20260320.sh -i "C:/data/input"
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output"
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --trial-name=SampleStudy --format=wide
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata"
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output"
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output" --trial-name=SampleStudy --format=wide
 #   ./dataPreprocessing20260320.sh -i "/path/to/sas/data" -o "/path/to/output" --format=condensed --debug=1
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --lst=1
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --log=1
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output" --lst=1
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output" --log=1
 #
 # Output Structure:
 #   output_directory/
-#   ├── DAC_SAS/              - Standardized SAS datasets (if any SAS file was renamed)
+#   ├── DAC_<ParentFolderName>/  - Standardized SAS datasets (if any SAS file was renamed)
 #   ├── DAC_XPT/              - XPT format datasets (and/or standardized XPT, if renamed)
 #   ├── DAC_SDTM/             - Converted SAS datasets (if XPT input detected)
 #   ├── DAC_CSV/              - CSV exports
@@ -116,7 +116,7 @@
 #
 # Author: DAC Development Team
 # Created: 2025-11-22
-# Version: 1.3
+# Version: 1.5
 #
 # Version History:
 #   1.0 (2025-11-22): Initial release
@@ -139,11 +139,23 @@
 #     - Entries are sorted by the script/step that caused each change.
 #     - Rename step annotates which datasets were renamed and to what names.
 #     - XPT step annotates the conversion direction (SAS->XPT or XPT->SDTM).
+#   1.4 (2026-05-19): Dynamic SAS output folder naming
+#     - SAS standardization folder is now named DAC_<ParentFolderName> where
+#       ParentFolderName is the leaf segment of the input directory
+#       (e.g. if input is C:/data/rawdata, folder becomes DAC_rawdata).
+#     - Both the shell script and rename_study_domains_cli20260320.sas (v1.3)
+#       derive the same folder name from the input path.
+#   1.5 (2026-05-19): Default output to grandparent of input; overwrite guard
+#     - When -o is omitted, OUTPUT_DIR defaults to the grandparent folder of
+#       INPUT_DIR (e.g. input C:/study/trial/rawdata -> output C:/study/trial).
+#     - Before the pipeline begins, if any DAC_* subfolder already exists in
+#       OUTPUT_DIR the user is shown the list and prompted to confirm before
+#       continuing; answering anything other than y/yes aborts the run.
 #
 # Notes:
 #   - Script exits on first error (set -e)
 #   - Step 1 standardizes dataset names; subsequent steps use standardized names
-#   - Automatically adjusts input path if DAC_SAS, DAC_XPT, or DAC_SDTM is created
+#   - Automatically adjusts input path if DAC_<ParentFolderName>, DAC_XPT, or DAC_SDTM is created
 #   - NAME_DIR is set whenever INPUT_DIR is redirected to preserve original path
 #     segments (ggg_parent, gg_parent) in all documentation output filenames
 #   - Exports VARIABLE_INFO_FILE and TRIAL_NAME for downstream processing
@@ -174,7 +186,7 @@ detailed_help() {
     echo "    Effect: Specifies the source directory containing .sas7bdat or .xpt"
     echo "      files. Every pipeline step reads datasets from this path. If step"
     echo "      [1/7] standardizes dataset names, INPUT_DIR is automatically"
-    echo "      redirected to DAC_SAS (for .sas7bdat) or DAC_XPT (for .xpt) so"
+    echo "      redirected to DAC_<ParentFolderName> (for .sas7bdat) or DAC_XPT (for .xpt) so"
     echo "      all subsequent steps operate on the standardized copies."
     echo ""
     echo "  -o <output_directory>"
@@ -187,7 +199,7 @@ detailed_help() {
     echo "      [6/7] library_info_cli20260320.sas"
     echo "      [7/7] metadata_to_dict_cli20260320.py"
     echo "    Output affected:"
-    echo "      DAC_SAS/          - Standardized SAS datasets (step 1, if renamed)"
+    echo "      DAC_<ParentFolderName>/ - Standardized SAS datasets (step 1, if renamed)"
     echo "      DAC_XPT/          - XPT exports (step 2) or standardized XPT (step 1)"
     echo "      DAC_SDTM/         - Converted SAS datasets from XPT input (step 2)"
     echo "      DAC_CSV/          - CSV exports (step 3)"
@@ -319,7 +331,7 @@ usage() {
     echo ""
     echo "Flags:"
     echo "  -i input_dir               Path to directory containing SAS datasets (required)"
-    echo "  -o output_dir              Path where outputs will be saved (optional, default: E:/output)"
+    echo "  -o output_dir              Path where outputs will be saved (optional, default: grandparent of input directory)"
     echo "  -H, --detailed-help        Show detailed help: which scripts use each flag,"
     echo "                             which output files are affected, and the effect"
     echo ""
@@ -487,7 +499,7 @@ log_step_changes() {
 
 # Default values
 INPUT_DIR=""
-OUTPUT_DIR="E:\\output"
+OUTPUT_DIR=""
 
 # Default values for optional data_specs parameters
 TRIAL_NAME=""
@@ -601,6 +613,42 @@ if [ ! -d "$INPUT_DIR" ]; then
     exit 1
 fi
 
+# Default OUTPUT_DIR to the grandparent of INPUT_DIR when -o is not supplied.
+# Handles both Unix forward slashes and Windows backslashes.
+if [ -z "$OUTPUT_DIR" ]; then
+    _op="${INPUT_DIR%/*}"
+    [ "$_op" = "$INPUT_DIR" ] && _op="${INPUT_DIR%\\*}"
+    _gp="${_op%/*}"
+    [ "$_gp" = "$_op" ] && _gp="${_op%\\*}"
+    if [ -n "$_gp" ] && [ "$_gp" != "$INPUT_DIR" ]; then
+        OUTPUT_DIR="$_gp"
+    else
+        OUTPUT_DIR="$_op"
+    fi
+    echo "Output directory not specified; defaulting to grandparent of input: $OUTPUT_DIR"
+fi
+
+# Warn and confirm before overwriting any existing DAC_* output folders.
+if [ -d "$OUTPUT_DIR" ]; then
+    _existing_dac=()
+    while IFS= read -r -d '' _dac_dir; do
+        _existing_dac+=("$_dac_dir")
+    done < <(find "$OUTPUT_DIR" -maxdepth 1 -type d -name 'DAC_*' -print0 2>/dev/null)
+    if [ ${#_existing_dac[@]} -gt 0 ]; then
+        echo ""
+        echo "Warning: The following DAC output folder(s) already exist in: $OUTPUT_DIR"
+        for _dac_dir in "${_existing_dac[@]}"; do
+            echo "  $(basename "$_dac_dir")"
+        done
+        echo ""
+        read -rp "Files in these folders may be overwritten. Continue? [y/N] " _confirm
+        case "$_confirm" in
+            [yY]|[yY][eE][sS]) echo "" ;;
+            *) echo "Aborted."; exit 1 ;;
+        esac
+    fi
+fi
+
 # Create output directory if it doesn't exist
 if [ ! -d "$OUTPUT_DIR" ]; then
     mkdir -p "$OUTPUT_DIR"
@@ -647,7 +695,7 @@ fi
 SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
 
 # Save the original input directory so file names can reflect the original path
-# even after INPUT_DIR is updated to a generated folder (DAC_SAS, DAC_XPT, or
+# even after INPUT_DIR is updated to a generated folder (DAC_<ParentFolderName>, DAC_XPT, or
 # DAC_SDTM).  NAME_DIR is set whenever INPUT_DIR is redirected and is passed to
 # the documentation scripts so that ggg_parent and gg_parent in output filenames
 # always come from the original input path.
@@ -709,11 +757,12 @@ fi
 "$SAS_EXE" -sysparm "$SYSPARM" -sysin "$SCRIPT_DIR/rename_study_domains_cli20260320.sas" -log "$LOG_ARG_0" "${SAS_PRINT_0[@]}"
 echo "      Complete.$([ "$LOG_ENABLED" = "1" ] && echo " Log: $DAC_LOGS_DIR/rename_domains.log")"
 
-# Check if the rename script created DAC_SAS (SAS files renamed) or DAC_XPT (XPT files renamed)
+# Check if the rename script created DAC_<ParentFolderName> (SAS files renamed) or DAC_XPT (XPT files renamed)
 # and update INPUT_DIR accordingly so all subsequent steps use standardized names.
 # Note: this check runs before SAStoXPTcli, so any DAC_XPT found here was created by the
 # rename script (not by the XPT conversion step that follows).
-DAC_SAS_DIR="${OUTPUT_DIR}/DAC_SAS"
+INPUT_BASENAME=$(basename "$INPUT_DIR")
+DAC_SAS_DIR="${OUTPUT_DIR}/DAC_${INPUT_BASENAME}"
 DAC_XPT_RENAMED_DIR="${OUTPUT_DIR}/DAC_XPT"
 
 _rename_notes=""
@@ -725,9 +774,9 @@ if [ -d "$DAC_SAS_DIR" ] && [ "$(ls -A "$DAC_SAS_DIR" 2>/dev/null)" ]; then
     SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
     # Build a naming path that preserves the original study context: keep the
     # original input path's parent directory but replace the leaf folder with
-    # the DAC_SAS folder name.  This ensures documentation filenames retain
-    # the original ggg_parent and gg_parent path segments even though the
-    # actual input is now the generated DAC_SAS folder.
+    # the DAC_<ParentFolderName> folder name.  This ensures documentation filenames
+    # retain the original ggg_parent and gg_parent path segments even though the
+    # actual input is now the generated DAC_<ParentFolderName> folder.
     build_name_dir "$(basename "$DAC_SAS_DIR")"
     # Detect which SAS datasets were renamed for the change log
     _rename_notes=$(_detect_renames "$ORIG_INPUT_DIR" "sas7bdat")
@@ -738,7 +787,7 @@ elif [ -d "$DAC_XPT_RENAMED_DIR" ] && [ "$(ls -A "$DAC_XPT_RENAMED_DIR" 2>/dev/n
     INPUT_DIR="$DAC_XPT_RENAMED_DIR"
     SYSPARM="${INPUT_DIR}|${OUTPUT_DIR}"
     # Build a naming path that preserves the original study context, same
-    # approach as the DAC_SAS case above.
+    # approach as the DAC_<ParentFolderName> case above.
     build_name_dir "$(basename "$DAC_XPT_RENAMED_DIR")"
     # Detect which XPT datasets were renamed for the change log
     _rename_notes=$(_detect_renames "$ORIG_INPUT_DIR" "xpt")
@@ -926,8 +975,8 @@ echo "Output files located in:"
 echo "  - Documents: $OUTPUT_DIR/DAC_Documents"
 echo "  - CSV:       $OUTPUT_DIR/DAC_CSV"
 echo "  - XPT:       $OUTPUT_DIR/DAC_XPT"
-if [ -d "${OUTPUT_DIR}/DAC_SAS" ]; then
-    echo "  - SAS:       $OUTPUT_DIR/DAC_SAS"
+if [ -d "$DAC_SAS_DIR" ]; then
+    echo "  - SAS:       $DAC_SAS_DIR"
 fi
 if [ -d "$DAC_SDTM_DIR" ]; then
     echo "  - SDTM:      $DAC_SDTM_DIR"

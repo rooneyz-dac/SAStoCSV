@@ -2,11 +2,11 @@
 | PROGRAM NAME : rename_study_domains_cli20260320.sas
 | SHORT DESC   : Standardizes SAS and XPT dataset names by removing
 |                suffixes (e.g., AE_PLACEBO to AE) and placing
-|                renamed copies in DAC_SAS or DAC_XPT subfolders
+|                renamed copies in DAC_<ParentFolderName> or DAC_XPT subfolders
 *------------------------------------------------------------------*
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2026-05-08
-| VERSION      : 1.2
+| VERSION      : 1.3
 *------------------------------------------------------------------*
 | VERSION UPDATES:
 | 2026-05-08: Initial CLI release (v1.0)
@@ -34,6 +34,11 @@
 |     BERKELEY_AE -> AE).  Using position 1 caused all datasets to
 |     map to the study prefix (e.g. BERKELEY), triggering a duplicate-
 |     name collision for every dataset in the library.
+| 2026-05-19: Dynamic SAS output folder naming (v1.3)
+|   - SAS output folder is now named DAC_<ParentFolderName> where
+|     ParentFolderName is the leaf segment of the input directory
+|     (e.g. if input is C:\data\rawdata, folder becomes DAC_rawdata).
+|   - Handles both Windows backslash and Unix forward slash separators.
 *------------------------------------------------------------------*
 | PURPOSE
 | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
@@ -41,7 +46,7 @@
 | study-specific suffixes (e.g., converting AE_PLACEBO to AE).
 | When any dataset requires renaming, ALL datasets of that type are
 | copied with standardized names to a new subfolder:
-|   - DAC_SAS for .sas7bdat files
+|   - DAC_<ParentFolderName> for .sas7bdat files
 |   - DAC_XPT for .xpt files
 | This ensures that subsequent pipeline scripts operate on a
 | complete, consistently named set of datasets.
@@ -55,9 +60,9 @@
 | 1.1: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
 | INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
 |                    files to be renamed
-| OUTPUT_DIRECTORY = Path to folder where DAC_SAS and/or DAC_XPT
-|                    subfolders will be created. Must exist prior
-|                    to execution.
+| OUTPUT_DIRECTORY = Path to folder where DAC_<ParentFolderName>
+|                    and/or DAC_XPT subfolders will be created.
+|                    Must exist prior to execution.
 |
 | USAGE:
 |   sas -sysparm "input_directory|output_directory"
@@ -65,9 +70,9 @@
 |
 | OUTPUT STRUCTURE:
 |   output_directory\
-|   ├── DAC_SAS\    - Standardized SAS7BDAT datasets
-|   │                 (created only when any .sas7bdat dataset has
-|   │                  a non-standard suffix)
+|   ├── DAC_<ParentFolderName>\  - Standardized SAS7BDAT datasets
+|   │                              (created only when any .sas7bdat
+|   │                               dataset has a non-standard suffix)
 |   └── DAC_XPT\   - Standardized XPT datasets
 |                     (created only when any .xpt file has
 |                      a non-standard suffix)
@@ -181,6 +186,12 @@
     %put NOTE: [rename_study_domains] Input Directory  = &indir;
     %put NOTE: [rename_study_domains] Output Directory = &outdir;
 
+    /* ---- Derive output folder name from the input directory leaf segment ---- */
+    /* Handles both Windows backslash and Unix forward slash separators.         */
+    %let parent_folder_name = %scan(&indir, -1, \/);
+    %let dac_sas_folder     = DAC_&parent_folder_name;
+    %put NOTE: [rename_study_domains] SAS output folder name = &dac_sas_folder;
+
     /* ---- Validate directories ---- */
     %if %sysfunc(fileexist(&indir))  = 0 %then %do;
         %put ERROR: Input directory does not exist: &indir;
@@ -259,13 +270,13 @@
 
         %if &sas_rename_count > 0 %then %do;
 
-            /* Create DAC_SAS output directory if needed */
-            %let dac_sas_dir   = &outdir\DAC_SAS;
+            /* Create DAC_<ParentFolderName> output directory if needed */
+            %let dac_sas_dir   = &outdir\&dac_sas_folder;
             %let dac_sas_exist = %sysfunc(fileexist(&dac_sas_dir));
 
             %if &dac_sas_exist = 0 %then %do;
                 %put NOTE: Creating directory &dac_sas_dir;
-                %let _rc = %sysfunc(dcreate(DAC_SAS, &outdir));
+                %let _rc = %sysfunc(dcreate(&dac_sas_folder, &outdir));
                 %if &_rc = %then %do;
                     %put ERROR: Failed to create directory &dac_sas_dir;
                     libname _inlib clear;
@@ -276,14 +287,14 @@
                 %put NOTE: Directory &dac_sas_dir already exists.;
             %end;
 
-            /* Copy ALL datasets from input library to DAC_SAS so the
+            /* Copy ALL datasets from input library to &dac_sas_folder so the
                output folder is a complete, self-consistent set.
                Original input files are never modified. */
             libname _outdac "&dac_sas_dir";
             proc copy in=_inlib out=_outdac memtype=data; run;
             libname _inlib clear;
 
-            /* Rename datasets that have suffixes in DAC_SAS using
+            /* Rename datasets that have suffixes in &dac_sas_folder using
                proc datasets change (same approach as the original script) */
             data _null_;
                 set _work_sas;
@@ -302,7 +313,7 @@
 
     %end; /* sas_rename_count > 0 */
     %else %do;
-        %put NOTE: All &sas_total SAS7BDAT dataset(s) already have standard names. No DAC_SAS folder created.;
+        %put NOTE: All &sas_total SAS7BDAT dataset(s) already have standard names. No &dac_sas_folder folder created.;
         libname _inlib clear;
     %end;
 
