@@ -1,0 +1,4 @@
+Error Log - 19MAY2026:12:52:30
+Input Directory: C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\SDTM_Placebo_only
+Output Directory: C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820
+----------------------------------------

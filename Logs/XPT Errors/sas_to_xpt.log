@@ -1,0 +1,373 @@
+1                                           The SAS System                 12:52 Tuesday, May 19, 2026
+
+NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
+NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
+      Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
+NOTE: This session is executing on the X64_DSRV16  platform.
+
+
+
+NOTE: Updated analytical products:
+      
+      SAS/STAT 14.3
+      SAS/ETS 14.3
+      SAS/IML 14.3
+      SAS/QC 14.3
+
+NOTE: Additional host information:
+
+ X64_DSRV16 WIN 10.0.26100  Server
+
+NOTE: SAS initialization used:
+      real time           0.41 seconds
+      cpu time            0.29 seconds
+      
+1          /*------------------------------------------------------------------*
+2          | PROGRAM NAME : SAStoXPTcli20260320.sas
+3          | SHORT DESC   : Bidirectional batch conversion between SAS7BDAT
+4          |                and XPT (SAS Transport) formats via CLI
+5          *------------------------------------------------------------------*
+6          | CREATED BY   : DAC Development Team
+7          | DATE CREATED : 2025-11-21
+8          | VERSION      : 2.0
+9          *------------------------------------------------------------------*
+10         | VERSION UPDATES:
+11         | 2025-11-21: Initial CLI release (v2.0)
+12         |   - Added SYSPARM parsing for input and output directories
+13         |   - Added bidirectional conversion (SAS7BDAT <-> XPT)
+14         |   - Added automatic creation of DAC_XPT and DAC_SDTM subfolders
+15         |   - Added conversion error log generation
+16         | 2026-03-20: File standardized to 20260320 naming convention
+17         |   - No functional changes; header and filename updated to match
+18         |     the pipeline versioning convention used across all CLI scripts
+19         *------------------------------------------------------------------*
+20         | PURPOSE
+21         | Performs batch bidirectional conversion of SAS datasets between
+22         | SAS7BDAT and XPT (SAS Transport) formats. When .sas7bdat files
+23         | are detected in the input directory they are converted to .xpt
+24         | and placed in OUTDIR\DAC_XPT. When .xpt files are detected they
+25         | are converted to .sas7bdat and placed in OUTDIR\DAC_SDTM. Both
+26         | conversion types may occur in a single run. An error log
+27         | (xpt_error_log.txt) is written to the DAC_Logs subdirectory.
+28         |
+29         | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+30         | INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
+31         |                    files to be converted
+32         | OUTPUT_DIRECTORY = Path to folder where output subfolders and
+2                                           The SAS System                 12:52 Tuesday, May 19, 2026
+
+33         |                    the error log will be created. Must exist
+34         |                    prior to execution.
+35         |
+36         | 2.0: XPT FORMAT LIMITATIONS
+37         | MEMBER NAMES     = Limited to 8 characters by the XPT format
+38         |                    specification. Dataset names longer than 8
+39         |                    characters are automatically truncated to the
+40         |                    first 4 characters concatenated with the last
+41         |                    4 characters.
+42         |                    Example: "berkeley_pbo_ae" becomes "berkl_ae"
+43         |
+44         | USAGE:
+45         |   sas -sysparm "input_directory|output_directory"
+46         |       -sysin SAStoXPTcli20260320.sas
+47         |
+48         | OUTPUT STRUCTURE:
+49         |   output_directory\
+50         |   ├── DAC_XPT\          - XPT exports (from .sas7bdat input)
+51         |   ├── DAC_SDTM\         - SAS7BDAT exports (from .xpt input)
+52         |   └── DAC_Logs\
+53         |       └── xpt_error_log.txt - Conversion activity and error log
+54         *------------------------------------------------------------------*
+55         | OPERATING SYSTEM COMPATIBILITY
+56         | SAS v9.4 or Higher: Yes
+57         | Windows:            Yes (uses DIR command for file listing)
+58         *------------------------------------------------------------------*
+59         | MACRO CALL
+60         |
+61         | Not applicable. Script is invoked directly via the SAS command
+62         | line using -sysin and -sysparm.
+63         *------------------------------------------------------------------*
+64         | EXAMPLES
+65         |
+66         | Convert SAS datasets to XPT format:
+67         |   sas -sysparm "C:\data\input|C:\data\output"
+68         |       -sysin SAStoXPTcli20260320.sas
+69         |
+70         | Convert XPT files back to SAS7BDAT:
+71         |   sas -sysparm "C:\data\xpt_files|C:\data\output"
+72         |       -sysin SAStoXPTcli20260320.sas
+73         |
+74         | Process a mixed directory (both .sas7bdat and .xpt present):
+75         |   sas -sysparm "C:\data\mixed|C:\data\output"
+76         |       -sysin SAStoXPTcli20260320.sas
+77         *------------------------------------------------------------------*/
+78         
+79         %macro convert_files;
+80             %let sysparm_value = &sysparm;
+81             %put DEBUG: Raw SYSPARM value = &sysparm_value;
+82         
+83             %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+84             %put DEBUG: Pipe position = &pipe_pos;
+85         
+86             %if &pipe_pos > 0 %then %do;
+3                                           The SAS System                 12:52 Tuesday, May 19, 2026
+
+87                 %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+88                 %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+89             %end;
+90             %else %do;
+91                 %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+92                 %abort;
+93             %end;
+94         
+95             %put DEBUG: Input Directory = &indir;
+96             %put DEBUG: Output Directory = &outdir;
+97         
+98             %let indir_exist = %sysfunc(fileexist(&indir));
+99             %let outdir_exist = %sysfunc(fileexist(&outdir));
+100        
+101            %if &indir_exist = 0 %then %do;
+102                %put ERROR: Input directory does not exist: &indir;
+103                %abort;
+104            %end;
+105        
+106            %if &outdir_exist = 0 %then %do;
+107                %put ERROR: Output directory does not exist: &outdir;
+108                %abort;
+109            %end;
+110        
+111            /* Create DAC_Logs subfolder if it does not exist */
+112            %let dac_logs_dir = &outdir\DAC_Logs;
+113            %let dac_logs_exist = %sysfunc(fileexist(&dac_logs_dir));
+114            %if &dac_logs_exist = 0 %then %do;
+115                %let rc = %sysfunc(dcreate(DAC_Logs, &outdir));
+116                %if &rc = %then %do;
+117                    %put ERROR: Failed to create directory &dac_logs_dir;
+118                    %abort;
+119                %end;
+120            %end;
+121        
+122            %let errlog = &outdir\DAC_Logs\xpt_error_log.txt;
+123        
+124            data _null_;
+125                file "&errlog";
+126                length dt $19;
+127                dt = put(datetime(), datetime19.);
+128                put "Error Log - " dt;
+129                put "Input Directory: &indir";
+130                put "Output Directory: &outdir";
+131                put "----------------------------------------";
+132            run;
+133        
+134            filename infiles pipe "dir /b ""&indir\*.sas7bdat"" ""&indir\*.xpt"" 2>nul";
+135        
+136            data file_list;
+137                infile infiles truncover;
+138                input filename $256.;
+139                length filetype $10;
+140                if index(upcase(filename), '.SAS7BDAT') > 0 then filetype = 'SAS7BDAT';
+4                                           The SAS System                 12:52 Tuesday, May 19, 2026
+
+141                else if index(upcase(filename), '.XPT') > 0 then filetype = 'XPT';
+142            run;
+143        
+144            filename infiles clear;
+145        
+146            proc sql noprint;
+147                select count(*) into :sas7bdat_count trimmed from file_list where filetype =
+147      ! 'SAS7BDAT';
+148                select count(*) into :xpt_count trimmed from file_list where filetype = 'XPT';
+149            quit;
+150        
+151            %put DEBUG: Found &sas7bdat_count SAS7BDAT files;
+152            %put DEBUG: Found &xpt_count XPT files;
+153        
+154            %if &sas7bdat_count > 0 %then %do;
+155                %let xpt_dir = &outdir\DAC_XPT;
+156                %let xpt_exist = %sysfunc(fileexist(&xpt_dir));
+157        
+158                %if &xpt_exist = 0 %then %do;
+159                    %put DEBUG: Creating directory &xpt_dir;
+160                    %let rc = %sysfunc(dcreate(DAC_XPT, &outdir));
+161                    %if &rc = %then %do;
+162                        %put ERROR: Failed to create directory &xpt_dir;
+163                        %abort;
+164                    %end;
+165                %end;
+166        
+167                libname inlib "&indir";
+168        
+169                data _null_;
+170                    set file_list end=eof;
+171                    where filetype = 'SAS7BDAT';
+172        
+173                    length dsname memname $32 xpt_path $256;
+174        
+175                    dsname = scan(filename, 1, '.');
+176        
+177                    /* Truncate to first 4 + last 4 characters for XPT compliance */
+178                    if length(dsname) > 8 then
+179                        memname = substr(dsname, 1, 4) || substr(dsname, length(dsname) - 3, 4);
+180                    else
+181                        memname = dsname;
+182        
+183                    xpt_path = "&xpt_dir\" || strip(memname) || ".xpt";
+184        
+185                    call execute('libname xptlib xport "' || strip(xpt_path) || '";');
+186        
+187                    /* Use PROC DATASETS to rename, then PROC COPY to transfer */
+188                    if dsname ne memname then do;
+189                        call execute('proc datasets library=inlib nolist; change ' || strip(dsname)
+189      !  || '=' || strip(memname) || '; quit;');
+190                    end;
+191        
+192                    call execute('proc copy in=inlib out=xptlib memtype=data; select ' ||
+5                                           The SAS System                 12:52 Tuesday, May 19, 2026
+
+192      ! strip(memname) || '; run;');
+193        
+194                    /* Rename back if needed */
+195                    if dsname ne memname then do;
+196                        call execute('proc datasets library=inlib nolist; change ' ||
+196      ! strip(memname) || '=' || strip(dsname) || '; quit;');
+197                    end;
+198        
+199                    call execute('libname xptlib clear;');
+200        
+201                    file "&errlog" mod;
+202                    put "Converted to XPT: " dsname " -> " memname " (" xpt_path ")";
+203        
+204                    if eof then do;
+205                        put "----------------------------------------";
+206                        put "Total SAS7BDAT files processed: " _n_;
+207                    end;
+208                run;
+209        
+210                libname inlib clear;
+211            %end;
+212        
+213            %if &xpt_count > 0 %then %do;
+214                %let sdtm_dir = &outdir\DAC_SDTM;
+215                %let sdtm_exist = %sysfunc(fileexist(&sdtm_dir));
+216        
+217                %if &sdtm_exist = 0 %then %do;
+218                    %put DEBUG: Creating directory &sdtm_dir;
+219                    %let rc = %sysfunc(dcreate(DAC_SDTM, &outdir));
+220                    %if &rc = %then %do;
+221                        %put ERROR: Failed to create directory &sdtm_dir;
+222                        %abort;
+223                    %end;
+224                %end;
+225        
+226                libname outsdtm "&sdtm_dir";
+227        
+228                data _null_;
+229                    set file_list end=eof;
+230                    where filetype = 'XPT';
+231        
+232                    length dsname $32;
+233        
+234                    dsname = scan(filename, 1, '.');
+235        
+236                    call execute('libname xptlib xport "' || "&indir\" || strip(filename) || '";');
+237                    call execute('proc copy in=xptlib out=outsdtm; run;');
+238                    call execute('libname xptlib clear;');
+239        
+240                    file "&errlog" mod;
+241                    put "Converted to SAS7BDAT: " dsname;
+242        
+243                    if eof then do;
+244                        put "----------------------------------------";
+6                                           The SAS System                 12:52 Tuesday, May 19, 2026
+
+245                        put "Total XPT files processed: " _n_;
+246                    end;
+247                run;
+248        
+249                libname outsdtm clear;
+250            %end;
+251        
+252            %put DEBUG: Conversion process completed;
+253        
+254            data _null_;
+255                file "&errlog" mod;
+256                length dt $19;
+257                dt = put(datetime(), datetime19.);
+258                put "----------------------------------------";
+259                put "Process completed: " dt;
+260            run;
+261        
+262        %mend convert_files;
+263        
+264        %convert_files;
+DEBUG: Raw SYSPARM value = 
+C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\SDTM_Placebo_only|C:\Users\roone
+yz\Documents\TestData\IPSENTestData\Resolve-IT_20250820
+DEBUG: Pipe position = 88
+DEBUG: Input Directory = 
+C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\SDTM_Placebo_only
+DEBUG: Output Directory = C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820
+
+NOTE: The file 
+      "C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\DAC_Logs\xpt_error_log.tx
+      t" is:
+      
+      Filename=C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\DAC_Logs\xpt_erro
+      r_log.txt,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=19May2026:12:52:30,
+      Create Time=19May2026:12:52:30
+
+NOTE: 4 records were written to the file 
+      "C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\DAC_Logs\xpt_error_log.tx
+      t".
+      The minimum record length was 30.
+      The maximum record length was 104.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+
+NOTE: The infile INFILES is:
+      Unnamed Pipe Access Device,
+      
+      PROCESS=dir /b 
+      "C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\SDTM_Placebo_only\*.sas7b
+7                                           The SAS System                 12:52 Tuesday, May 19, 2026
+
+      dat" 
+      "C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\SDTM_Placebo_only\*.xpt" 
+      2>nul,
+      RECFM=V,LRECL=32767
+
+NOTE: 49 records were read from the infile INFILES.
+      The minimum record length was 6.
+      The maximum record length was 10.
+NOTE: The data set WORK.FILE_LIST has 49 observations and 2 variables.
+NOTE: DATA statement used (Total process time):
+      real time           0.10 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: Fileref INFILES has been deassigned.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+DEBUG: Found 0 SAS7BDAT files
+DEBUG: Found 49 XPT files
+DEBUG: Creating directory 
+C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\DAC_SDTM
+ERROR: A character operand was found in the %EVAL function or %IF condition where a numeric operand 
+       is required. The condition was: &rc = 
+ERROR: The macro CONVERT_FILES will stop executing.
+
+ERROR: Errors printed on page 7.
+
+NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
+NOTE: The SAS System used:
+      real time           0.60 seconds
+      cpu time            0.37 seconds
+      

@@ -1,0 +1,18 @@
+=======================================================
+ Pipeline Change Log
+ Generated:  2026-05-19 12:52:27
+ Input:      C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820\SDTM_Placebo_only
+ Output:     C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820
+ Trial:      Resolve-IT_20250820
+=======================================================
+ Changes are recorded below, sorted by the script that
+ caused each change.  Each section shows the files
+ created during that pipeline step.
+=======================================================
+
+-------------------------------------------------------
+Step [1/7]  Script: rename_study_domains_cli20260320.sas
+Timestamp: 2026-05-19 12:52:29
+
+  Files Created:
+    + C:\Users\rooneyz\Documents\TestData\IPSENTestData\Resolve-IT_20250820/DAC_Logs/rename_domains.log
