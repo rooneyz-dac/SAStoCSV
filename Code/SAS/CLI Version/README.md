@@ -31,7 +31,7 @@ Automated pipeline that standardizes SAS dataset names, converts between SAS for
 ## Quick Start
 
 ```bash
-# Minimal — output defaults to the grandparent of the input directory
+# Minimal — output defaults to the parent of the input directory
 # (e.g. -i "C:/studies/SampleStudy/rawdata" → output goes to "C:/studies/SampleStudy")
 ./dataPreprocessing20260320.sh -i "C:/studies/SampleStudy/rawdata"
 
@@ -62,7 +62,7 @@ Automated pipeline that standardizes SAS dataset names, converts between SAS for
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-o <output_dir>` | Grandparent of input directory | Root directory where all output subdirectories are created |
+| `-o <output_dir>` | Parent of input directory | Root directory where all output subdirectories are created |
 | `-H`, `--detailed-help` | — | Show per-flag detail: which scripts use it, which files it affects |
 | `-h`, `--help` | — | Show concise usage summary |
 
@@ -172,7 +172,7 @@ Output: `DAC_Documents/dictionary_<GGG>_<GG>_<G>_<YYYYMMDD>.csv` and `.xlsx`
 
 - The pipeline exits immediately on the first error (`set -e`).
 - If step 1 standardizes dataset names, `INPUT_DIR` is automatically redirected to `DAC_<ParentFolderName>` or `DAC_XPT` for all subsequent steps; the original path segments are preserved in documentation filenames via `NAME_DIR`.
-- When `-o` is omitted, the output directory defaults to the **grandparent** of the input directory (e.g. `-i "C:/studies/SampleStudy/rawdata"` → output in `C:/studies/SampleStudy`).
+- When `-o` is omitted, the output directory defaults to the **parent** of the input directory (e.g. `-i "C:/studies/SampleStudy/rawdata"` → output in `C:/studies/SampleStudy`).
 - If any `DAC_*` subfolder already exists in the output directory, the pipeline lists them and prompts for confirmation before proceeding. Entering anything other than `y` or `yes` aborts the run without modifying any files.
 - `pipeline_vars.env` is written after every run and exports `VARIABLE_INFO_FILE` and `TRIAL_NAME` for use by downstream scripts.
 - `pipeline_change_log.txt` records every file created by each step, sorted by step, with timestamps.

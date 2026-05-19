@@ -18,7 +18,7 @@
 #
 # Flags:
 #   -i input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
-#   -o output_directory - Path where outputs and documentation will be saved [optional, default: grandparent of input directory]
+#   -o output_directory - Path where outputs and documentation will be saved [optional, default: parent of input directory]
 #   -H, --detailed-help - Display detailed help showing which scripts use each flag,
 #                         which output files are affected, and the effect of each option
 #
@@ -145,8 +145,8 @@
 #       (e.g. if input is C:/data/rawdata, folder becomes DAC_rawdata).
 #     - Both the shell script and rename_study_domains_cli20260320.sas (v1.3)
 #       derive the same folder name from the input path.
-#   1.5 (2026-05-19): Default output to grandparent of input; overwrite guard
-#     - When -o is omitted, OUTPUT_DIR defaults to the grandparent folder of
+#   1.5 (2026-05-19): Default output to parent of input; overwrite guard
+#     - When -o is omitted, OUTPUT_DIR defaults to the parent folder of
 #       INPUT_DIR (e.g. input C:/study/trial/rawdata -> output C:/study/trial).
 #     - Before the pipeline begins, if any DAC_* subfolder already exists in
 #       OUTPUT_DIR the user is shown the list and prompted to confirm before
@@ -331,7 +331,7 @@ usage() {
     echo ""
     echo "Flags:"
     echo "  -i input_dir               Path to directory containing SAS datasets (required)"
-    echo "  -o output_dir              Path where outputs will be saved (optional, default: grandparent of input directory)"
+    echo "  -o output_dir              Path where outputs will be saved (optional, default: parent of input directory)"
     echo "  -H, --detailed-help        Show detailed help: which scripts use each flag,"
     echo "                             which output files are affected, and the effect"
     echo ""
@@ -613,19 +613,17 @@ if [ ! -d "$INPUT_DIR" ]; then
     exit 1
 fi
 
-# Default OUTPUT_DIR to the grandparent of INPUT_DIR when -o is not supplied.
+# Default OUTPUT_DIR to the parent of INPUT_DIR when -o is not supplied.
 # Handles both Unix forward slashes and Windows backslashes.
 if [ -z "$OUTPUT_DIR" ]; then
     _op="${INPUT_DIR%/*}"
     [ "$_op" = "$INPUT_DIR" ] && _op="${INPUT_DIR%\\*}"
-    _gp="${_op%/*}"
-    [ "$_gp" = "$_op" ] && _gp="${_op%\\*}"
-    if [ -n "$_gp" ] && [ "$_gp" != "$INPUT_DIR" ]; then
-        OUTPUT_DIR="$_gp"
-    else
+    if [ -n "$_op" ] && [ "$_op" != "$INPUT_DIR" ]; then
         OUTPUT_DIR="$_op"
+    else
+        OUTPUT_DIR="$INPUT_DIR"
     fi
-    echo "Output directory not specified; defaulting to grandparent of input: $OUTPUT_DIR"
+    echo "Output directory not specified; defaulting to parent of input: $OUTPUT_DIR"
 fi
 
 # Warn and confirm before overwriting any existing DAC_* output folders.
