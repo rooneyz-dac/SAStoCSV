@@ -18,7 +18,7 @@
 #
 # Flags:
 #   -i input_directory  - Path to directory containing SAS datasets (.sas7bdat or .xpt) [required]
-#   -o output_directory - Path where outputs and documentation will be saved [optional, default: E:\output]
+#   -o output_directory - Path where outputs and documentation will be saved [optional, default: grandparent of input directory]
 #   -H, --detailed-help - Display detailed help showing which scripts use each flag,
 #                         which output files are affected, and the effect of each option
 #
@@ -72,12 +72,12 @@
 #       1           - Save SAS listing files to the output directory.
 #
 # Examples:
-#   ./dataPreprocessing20260320.sh -i "C:/data/input"
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output"
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --trial-name=SampleStudy --format=wide
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata"
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output"
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output" --trial-name=SampleStudy --format=wide
 #   ./dataPreprocessing20260320.sh -i "/path/to/sas/data" -o "/path/to/output" --format=condensed --debug=1
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --lst=1
-#   ./dataPreprocessing20260320.sh -i "C:/data/input" -o "C:/data/output" --log=1
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output" --lst=1
+#   ./dataPreprocessing20260320.sh -i "C:/data/study/rawdata" -o "C:/data/output" --log=1
 #
 # Output Structure:
 #   output_directory/
@@ -116,7 +116,7 @@
 #
 # Author: DAC Development Team
 # Created: 2025-11-22
-# Version: 1.4
+# Version: 1.5
 #
 # Version History:
 #   1.0 (2025-11-22): Initial release
@@ -145,6 +145,12 @@
 #       (e.g. if input is C:/data/rawdata, folder becomes DAC_rawdata).
 #     - Both the shell script and rename_study_domains_cli20260320.sas (v1.3)
 #       derive the same folder name from the input path.
+#   1.5 (2026-05-19): Default output to grandparent of input; overwrite guard
+#     - When -o is omitted, OUTPUT_DIR defaults to the grandparent folder of
+#       INPUT_DIR (e.g. input C:/study/trial/rawdata -> output C:/study/trial).
+#     - Before the pipeline begins, if any DAC_* subfolder already exists in
+#       OUTPUT_DIR the user is shown the list and prompted to confirm before
+#       continuing; answering anything other than y/yes aborts the run.
 #
 # Notes:
 #   - Script exits on first error (set -e)
@@ -325,7 +331,7 @@ usage() {
     echo ""
     echo "Flags:"
     echo "  -i input_dir               Path to directory containing SAS datasets (required)"
-    echo "  -o output_dir              Path where outputs will be saved (optional, default: E:/output)"
+    echo "  -o output_dir              Path where outputs will be saved (optional, default: grandparent of input directory)"
     echo "  -H, --detailed-help        Show detailed help: which scripts use each flag,"
     echo "                             which output files are affected, and the effect"
     echo ""
@@ -493,7 +499,7 @@ log_step_changes() {
 
 # Default values
 INPUT_DIR=""
-OUTPUT_DIR="E:\\output"
+OUTPUT_DIR=""
 
 # Default values for optional data_specs parameters
 TRIAL_NAME=""
@@ -605,6 +611,42 @@ fi
 if [ ! -d "$INPUT_DIR" ]; then
     echo "Error: Input directory does not exist: $INPUT_DIR"
     exit 1
+fi
+
+# Default OUTPUT_DIR to the grandparent of INPUT_DIR when -o is not supplied.
+# Handles both Unix forward slashes and Windows backslashes.
+if [ -z "$OUTPUT_DIR" ]; then
+    _op="${INPUT_DIR%/*}"
+    [ "$_op" = "$INPUT_DIR" ] && _op="${INPUT_DIR%\\*}"
+    _gp="${_op%/*}"
+    [ "$_gp" = "$_op" ] && _gp="${_op%\\*}"
+    if [ -n "$_gp" ] && [ "$_gp" != "$INPUT_DIR" ]; then
+        OUTPUT_DIR="$_gp"
+    else
+        OUTPUT_DIR="$_op"
+    fi
+    echo "Output directory not specified; defaulting to grandparent of input: $OUTPUT_DIR"
+fi
+
+# Warn and confirm before overwriting any existing DAC_* output folders.
+if [ -d "$OUTPUT_DIR" ]; then
+    _existing_dac=()
+    while IFS= read -r -d '' _dac_dir; do
+        _existing_dac+=("$_dac_dir")
+    done < <(find "$OUTPUT_DIR" -maxdepth 1 -type d -name 'DAC_*' -print0 2>/dev/null)
+    if [ ${#_existing_dac[@]} -gt 0 ]; then
+        echo ""
+        echo "Warning: The following DAC output folder(s) already exist in: $OUTPUT_DIR"
+        for _dac_dir in "${_existing_dac[@]}"; do
+            echo "  $(basename "$_dac_dir")"
+        done
+        echo ""
+        read -rp "Files in these folders may be overwritten. Continue? [y/N] " _confirm
+        case "$_confirm" in
+            [yY]|[yY][eE][sS]) echo "" ;;
+            *) echo "Aborted."; exit 1 ;;
+        esac
+    fi
 fi
 
 # Create output directory if it doesn't exist
