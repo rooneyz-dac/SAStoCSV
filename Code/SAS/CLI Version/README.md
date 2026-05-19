@@ -70,7 +70,7 @@ Automated pipeline that standardizes SAS dataset names, converts between SAS for
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--trial-name=NAME` | Grandparent folder name of input directory | Trial identifier used in dictionary output filenames (uppercased automatically) |
+| `--trial-name=NAME` | Parent folder name of the input directory | Trial identifier used in dictionary output filenames (uppercased automatically) |
 | `--format=long\|condensed\|wide` | `long` | Layout of variables in each dataset summary tab of the data specs workbook |
 | `--order=varnum\|name` | `varnum` | Variable ordering in dataset summary tabs — by position (`varnum`) or alphabetically (`name`) |
 | `--index=VAR[,VAR...]` | none | One or more index variables (e.g. `USUBJID`) used to count distinct subjects per dataset |
@@ -97,15 +97,16 @@ output_directory/
 │   ├── library_info_<GGG>_<GG>_<G>_<YYYYMMDD>.xlsx
 │   ├── dictionary_<GGG>_<GG>_<G>_<YYYYMMDD>.csv
 │   └── dictionary_<GGG>_<GG>_<G>_<YYYYMMDD>.xlsx
-├── DAC_Logs/                   - SAS execution logs (created when --log=1 or --lst=1)
-│   ├── rename_domains.log/.lst
-│   ├── sas_to_xpt.log/.lst
-│   ├── sas_to_csv.log/.lst
-│   ├── variable_info.log/.lst
-│   ├── data_specs.log/.lst
-│   └── library_info.log/.lst
-├── pipeline_vars.env           - Environment variables exported for downstream use
-└── pipeline_change_log.txt     - Record of every file created by each pipeline step
+└── DAC_Logs/                   - SAS execution logs and pipeline records (always created)
+    ├── rename_domains.log/.lst  - SAS log/listing for step 1 (when --log=1 / --lst=1)
+    ├── sas_to_xpt.log/.lst      - SAS log/listing for step 2 (when --log=1 / --lst=1)
+    ├── sas_to_csv.log/.lst      - SAS log/listing for step 3 (when --log=1 / --lst=1)
+    ├── variable_info.log/.lst   - SAS log/listing for step 4 (when --log=1 / --lst=1)
+    ├── data_specs.log/.lst      - SAS log/listing for step 5 (when --log=1 / --lst=1)
+    ├── library_info.log/.lst    - SAS log/listing for step 6 (when --log=1 / --lst=1)
+    ├── error_log.txt            - Error summary from the SAStoCSV step (step 3)
+    ├── xpt_error_log.txt        - Conversion activity and error log from the XPT step (step 2)
+    └── pipeline_change_log.txt  - Record of every file created by each pipeline step
 ```
 
 > **Filename components** — `<GGG>`, `<GG>`, and `<G>` are the third-to-last, second-to-last, and last segments of the input directory path (alphanumeric characters only). For example, an input path of `C:/studies/SampleStudy/sas` produces `C_studies_SampleStudy` as the three-part prefix.
@@ -174,5 +175,4 @@ Output: `DAC_Documents/dictionary_<GGG>_<GG>_<G>_<YYYYMMDD>.csv` and `.xlsx`
 - If step 1 standardizes dataset names, `INPUT_DIR` is automatically redirected to `DAC_<ParentFolderName>` or `DAC_XPT` for all subsequent steps; the original path segments are preserved in documentation filenames via `NAME_DIR`.
 - When `-o` is omitted, the output directory defaults to the **parent** of the input directory (e.g. `-i "C:/studies/SampleStudy/rawdata"` → output in `C:/studies/SampleStudy`).
 - If any `DAC_*` subfolder already exists in the output directory, the pipeline lists them and prompts for confirmation before proceeding. Entering anything other than `y` or `yes` aborts the run without modifying any files.
-- `pipeline_vars.env` is written after every run and exports `VARIABLE_INFO_FILE` and `TRIAL_NAME` for use by downstream scripts.
-- `pipeline_change_log.txt` records every file created by each step, sorted by step, with timestamps.
+- `pipeline_change_log.txt` in `DAC_Logs/` records every file created by each step, sorted by step, with timestamps.
