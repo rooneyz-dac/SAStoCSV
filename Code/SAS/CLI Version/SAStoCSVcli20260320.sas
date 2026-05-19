@@ -19,7 +19,7 @@
 | Exports all SAS datasets (.sas7bdat) found in a specified input
 | directory to CSV format. Output CSV files are placed in a
 | DAC_CSV subfolder within the specified output directory. An error
-| log file (error_log.txt) is written to the output directory upon
+| log file (error_log.txt) is written to the DAC_Logs subdirectory upon
 | completion summarizing any SAS errors encountered.
 |
 | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
@@ -37,8 +37,9 @@
 |
 | OUTPUT STRUCTURE:
 |   output_directory\
-|   ├── DAC_CSV\          - CSV exports of all SAS datasets
-|   └── error_log.txt     - Error summary from the SAS run
+|   ├── DAC_CSV\              - CSV exports of all SAS datasets
+|   └── DAC_Logs\
+|       └── error_log.txt     - Error summary from the SAS run
 *------------------------------------------------------------------*
 | OPERATING SYSTEM COMPATIBILITY
 | SAS v9.4 or Higher: Yes
@@ -135,8 +136,20 @@ data _null_;
     end;
 run;
 
-/* 4) Set up error log file in output directory */
-filename errlog "&out_dir.\error_log.txt";
+/* 3b) Create DAC_Logs subfolder */
+data _null_;
+    length rc $260;
+    if fileexist("&out_dir.\DAC_Logs") then
+        put "NOTE: Directory &out_dir.\DAC_Logs already exists.";
+    else do;
+        rc = dcreate('DAC_Logs', "&out_dir");
+        if rc ne '' then put "NOTE: Created directory &out_dir.\DAC_Logs successfully.";
+        else put "ERROR: Could not create directory &out_dir.\DAC_Logs";
+    end;
+run;
+
+/* 4) Set up error log file in DAC_Logs subdirectory */
+filename errlog "&out_dir.\DAC_Logs\error_log.txt";
 
 /* 5) Get list of all datasets in INDIR */
 proc sql noprint;

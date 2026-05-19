@@ -93,10 +93,12 @@
 #   │   └── dictionary_*.xlsx
 #   ├── DAC_Logs/             - SAS log and listing files
 #   │   ├── *.log             - SAS execution logs (only when --log=1)
-#   │   └── *.lst             - SAS listing files (only when --lst=1)
-#   ├── pipeline_vars.env     - Environment variables for chaining scripts
-#   └── pipeline_change_log.txt - Detailed log of all files created/changed,
-#                               sorted by the script that caused each change
+#   │   ├── *.lst             - SAS listing files (only when --lst=1)
+#   │   ├── error_log.txt     - Error summary from SAStoCSV step
+#   │   ├── xpt_error_log.txt - Conversion activity and error log from XPT step
+#   │   └── pipeline_change_log.txt - Detailed log of all files created/changed,
+#   │                                 sorted by the script that caused each change
+#   └── pipeline_vars.env     - Environment variables for chaining scripts
 #
 # Requirements:
 #   - SAS Foundation 9.4 installed at default location
@@ -132,7 +134,7 @@
 #     - Fixed VARIABLE_INFO_FILE prediction to use all three path segments
 #       (ggg_parent_gg_parent_g_parent) instead of only the leaf segment.
 #   1.3 (2026-05-12): Added detailed pipeline change log
-#     - Generates pipeline_change_log.txt in the output directory on every run.
+#     - Generates pipeline_change_log.txt in the DAC_Logs subdirectory on every run.
 #     - Records which files each script created, with timestamps.
 #     - Entries are sorted by the script/step that caused each change.
 #     - Rename step annotates which datasets were renamed and to what names.
@@ -613,7 +615,7 @@ if [ ! -d "$DAC_LOGS_DIR" ]; then
 fi
 
 # Initialize the pipeline change log
-CHANGE_LOG_FILE="${OUTPUT_DIR}/pipeline_change_log.txt"
+CHANGE_LOG_FILE="${DAC_LOGS_DIR}/pipeline_change_log.txt"
 {
     echo "======================================================="
     echo " Pipeline Change Log"
