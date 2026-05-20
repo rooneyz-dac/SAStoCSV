@@ -1,9 +1,9 @@
 =======================================================
  Pipeline Change Log
- Generated:  2026-05-18 15:33:03
- Input:      C:\Users\rooneyz\Documents\TestData\EnyoTestData\NASH_BERKELEY_20250808\SDTM
- Output:     E:\output
- Trial:      20260518
+ Generated:  2026-05-20 11:43:55
+ Input:      C:\Users\rooneyz\Documents\TestData\COPY_04_Project_Data\MASHPDB\AKERO\Balanced_20251205\SDTM - Copy
+ Output:     C:\Users\rooneyz\Documents\TestData\COPY_04_Project_Data\MASHPDB\AKERO\Balanced_20251205
+ Trial:      Balanced_20251205
 =======================================================
  Changes are recorded below, sorted by the script that
  caused each change.  Each section shows the files
@@ -12,176 +12,26 @@
 
 -------------------------------------------------------
 Step [1/7]  Script: rename_study_domains_cli20260320.sas
-Timestamp: 2026-05-18 15:33:31
+Timestamp: 2026-05-20 11:43:57
 
   Files Created:
-    + E:\output/DAC_Logs/rename_domains.log
-    + E:\output/DAC_SAS/ae.sas7bdat
-    + E:\output/DAC_SAS/ce.sas7bdat
-    + E:\output/DAC_SAS/cm.sas7bdat
-    + E:\output/DAC_SAS/co.sas7bdat
-    + E:\output/DAC_SAS/da.sas7bdat
-    + E:\output/DAC_SAS/dm.sas7bdat
-    + E:\output/DAC_SAS/ds.sas7bdat
-    + E:\output/DAC_SAS/ec.sas7bdat
-    + E:\output/DAC_SAS/eg.sas7bdat
-    + E:\output/DAC_SAS/ex.sas7bdat
-    + E:\output/DAC_SAS/fa.sas7bdat
-    + E:\output/DAC_SAS/ho.sas7bdat
-    + E:\output/DAC_SAS/ie.sas7bdat
-    + E:\output/DAC_SAS/lb.sas7bdat
-    + E:\output/DAC_SAS/mh.sas7bdat
-    + E:\output/DAC_SAS/ml.sas7bdat
-    + E:\output/DAC_SAS/mo.sas7bdat
-    + E:\output/DAC_SAS/pc.sas7bdat
-    + E:\output/DAC_SAS/pe.sas7bdat
-    + E:\output/DAC_SAS/pr.sas7bdat
-    + E:\output/DAC_SAS/qs.sas7bdat
-    + E:\output/DAC_SAS/rp.sas7bdat
-    + E:\output/DAC_SAS/se.sas7bdat
-    + E:\output/DAC_SAS/su.sas7bdat
-    + E:\output/DAC_SAS/suppae.sas7bdat
-    + E:\output/DAC_SAS/suppdm.sas7bdat
-    + E:\output/DAC_SAS/suppds.sas7bdat
-    + E:\output/DAC_SAS/suppeg.sas7bdat
-    + E:\output/DAC_SAS/suppfa.sas7bdat
-    + E:\output/DAC_SAS/supplb.sas7bdat
-    + E:\output/DAC_SAS/suppmo.sas7bdat
-    + E:\output/DAC_SAS/supppe.sas7bdat
-    + E:\output/DAC_SAS/supppr.sas7bdat
-    + E:\output/DAC_SAS/suppqs.sas7bdat
-    + E:\output/DAC_SAS/sv.sas7bdat
-    + E:\output/DAC_SAS/ve.sas7bdat
-    + E:\output/DAC_SAS/vs.sas7bdat
-
-  Details:
-    Renamed: berkeley_pbo_ae.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ce.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_cm.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_co.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_da.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_dm.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ds.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ec.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_eg.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ex.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_fa.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ho.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ie.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_lb.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_mh.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ml.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_mo.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_pc.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_pe.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_pr.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_qs.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_rp.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_se.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_su.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_suppae.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_suppdm.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_suppds.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_suppeg.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_suppfa.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_supplb.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_suppmo.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_supppe.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_supppr.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_suppqs.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_sv.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_ve.sas7bdat  ->  .sas7bdat
-    Renamed: berkeley_pbo_vs.sas7bdat  ->  .sas7bdat
+    + C:\Users\rooneyz\Documents\TestData\COPY_04_Project_Data\MASHPDB\AKERO\Balanced_20251205/DAC_Logs/rename_domains.log
 
 -------------------------------------------------------
 Step [2/7]  Script: SAStoXPTcli20260320.sas
-Timestamp: 2026-05-18 15:33:33
+Timestamp: 2026-05-20 11:43:58
 
   Files Created:
-    + E:\output/DAC_Logs/sas_to_xpt.log
-    + E:\output/DAC_XPT/ae.xpt
-    + E:\output/DAC_XPT/ce.xpt
-    + E:\output/DAC_XPT/cm.xpt
-    + E:\output/DAC_XPT/co.xpt
-    + E:\output/DAC_XPT/da.xpt
-    + E:\output/DAC_XPT/dm.xpt
-    + E:\output/DAC_XPT/ds.xpt
-    + E:\output/DAC_XPT/ec.xpt
-    + E:\output/DAC_XPT/eg.xpt
-    + E:\output/DAC_XPT/ex.xpt
-    + E:\output/DAC_XPT/fa.xpt
-    + E:\output/DAC_XPT/ho.xpt
-    + E:\output/DAC_XPT/ie.xpt
-    + E:\output/DAC_XPT/lb.xpt
-    + E:\output/DAC_XPT/mh.xpt
-    + E:\output/DAC_XPT/ml.xpt
-    + E:\output/DAC_XPT/mo.xpt
-    + E:\output/DAC_XPT/pc.xpt
-    + E:\output/DAC_XPT/pe.xpt
-    + E:\output/DAC_XPT/pr.xpt
-    + E:\output/DAC_XPT/qs.xpt
-    + E:\output/DAC_XPT/rp.xpt
-    + E:\output/DAC_XPT/se.xpt
-    + E:\output/DAC_XPT/su.xpt
-    + E:\output/DAC_XPT/suppae.xpt
-    + E:\output/DAC_XPT/suppdm.xpt
-    + E:\output/DAC_XPT/suppds.xpt
-    + E:\output/DAC_XPT/suppeg.xpt
-    + E:\output/DAC_XPT/suppfa.xpt
-    + E:\output/DAC_XPT/supplb.xpt
-    + E:\output/DAC_XPT/suppmo.xpt
-    + E:\output/DAC_XPT/supppe.xpt
-    + E:\output/DAC_XPT/supppr.xpt
-    + E:\output/DAC_XPT/suppqs.xpt
-    + E:\output/DAC_XPT/sv.xpt
-    + E:\output/DAC_XPT/ve.xpt
-    + E:\output/DAC_XPT/vs.xpt
-    + E:\output/xpt_error_log.txt
+    + C:\Users\rooneyz\Documents\TestData\COPY_04_Project_Data\MASHPDB\AKERO\Balanced_20251205/DAC_Logs/sas_to_xpt.log
+    + C:\Users\rooneyz\Documents\TestData\COPY_04_Project_Data\MASHPDB\AKERO\Balanced_20251205/DAC_Logs/xpt_error_log.txt
 
   Details:
     Conversion direction: SAS7BDAT -> XPT (XPT exports written to DAC_XPT)
 
 -------------------------------------------------------
 Step [3/7]  Script: SAStoCSVcli20260320.sas
-Timestamp: 2026-05-18 15:33:36
+Timestamp: 2026-05-20 11:44:00
 
   Files Created:
-    + E:\output/DAC_CSV/AE.csv
-    + E:\output/DAC_CSV/CE.csv
-    + E:\output/DAC_CSV/CM.csv
-    + E:\output/DAC_CSV/CO.csv
-    + E:\output/DAC_CSV/DA.csv
-    + E:\output/DAC_CSV/DM.csv
-    + E:\output/DAC_CSV/DS.csv
-    + E:\output/DAC_CSV/EC.csv
-    + E:\output/DAC_CSV/EG.csv
-    + E:\output/DAC_CSV/EX.csv
-    + E:\output/DAC_CSV/FA.csv
-    + E:\output/DAC_CSV/HO.csv
-    + E:\output/DAC_CSV/IE.csv
-    + E:\output/DAC_CSV/LB.csv
-    + E:\output/DAC_CSV/MH.csv
-    + E:\output/DAC_CSV/ML.csv
-    + E:\output/DAC_CSV/MO.csv
-    + E:\output/DAC_CSV/PC.csv
-    + E:\output/DAC_CSV/PE.csv
-    + E:\output/DAC_CSV/PR.csv
-    + E:\output/DAC_CSV/QS.csv
-    + E:\output/DAC_CSV/RP.csv
-    + E:\output/DAC_CSV/SE.csv
-    + E:\output/DAC_CSV/SU.csv
-    + E:\output/DAC_CSV/SUPPAE.csv
-    + E:\output/DAC_CSV/SUPPDM.csv
-    + E:\output/DAC_CSV/SUPPDS.csv
-    + E:\output/DAC_CSV/SUPPEG.csv
-    + E:\output/DAC_CSV/SUPPFA.csv
-    + E:\output/DAC_CSV/SUPPLB.csv
-    + E:\output/DAC_CSV/SUPPMO.csv
-    + E:\output/DAC_CSV/SUPPPE.csv
-    + E:\output/DAC_CSV/SUPPPR.csv
-    + E:\output/DAC_CSV/SUPPQS.csv
-    + E:\output/DAC_CSV/SV.csv
-    + E:\output/DAC_CSV/VE.csv
-    + E:\output/DAC_CSV/VS.csv
-    + E:\output/DAC_Logs/sas_to_csv.log
-    + E:\output/error_log.txt
+    + C:\Users\rooneyz\Documents\TestData\COPY_04_Project_Data\MASHPDB\AKERO\Balanced_20251205/DAC_Logs/error_log.txt
+    + C:\Users\rooneyz\Documents\TestData\COPY_04_Project_Data\MASHPDB\AKERO\Balanced_20251205/DAC_Logs/sas_to_csv.log
