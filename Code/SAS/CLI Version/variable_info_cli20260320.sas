@@ -59,6 +59,11 @@
 |     crashing with "ERROR: File WORK.ALLVAROUT.DATA does not exist."
 |     (which occurred because proc contents ODS capture does not create
 |     the ALLVAROUT output object when the library has no members).
+| 2026-05-20: Strip library prefix from MEMBER column
+|   - Added a data step after column cleanup to replace MEMBER values
+|     like "INLIB.AE" with just the dataset name "AE" by taking the
+|     last dot-delimited token (scan(member,-1,'.')). This affects
+|     Excel sheet names, BY-group titles, and any downstream consumers.
 *------------------------------------------------------------------*
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
@@ -391,6 +396,14 @@
     proc datasets library=work nolist nodetails;
         delete _colinfo_;
     quit;
+
+    /**Strip library prefix from MEMBER (e.g. "INLIB.AE" -> "AE")**/
+    /**proc contents includes the libname in the MEMBER column; removing **/
+    /**it keeps sheet names and titles clean (just the dataset name).    **/
+    data allvarout;
+        set allvarout;
+        member = scan(member, -1, '.');
+    run;
 
     /**Create Excel output file with separate sheets per dataset**/
     /**Output columns: NUM, VARIABLE, TYPE, LEN, POS, LABEL              **/
