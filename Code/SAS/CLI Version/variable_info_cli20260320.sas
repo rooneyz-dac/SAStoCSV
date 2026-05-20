@@ -52,6 +52,13 @@
 |   - Updated rename SQL to use SAS name literals ('name'n) for any
 |     column names containing spaces, so PROC DATASETS RENAME works
 |     correctly under VALIDVARNAME=ANY
+| 2026-05-20: Empty-library guard
+|   - Added dataset count check immediately after the INLIB libname
+|     assignment. When 0 SAS datasets are found in the input directory,
+|     the macro now logs a NOTE and returns gracefully instead of
+|     crashing with "ERROR: File WORK.ALLVAROUT.DATA does not exist."
+|     (which occurred because proc contents ODS capture does not create
+|     the ALLVAROUT output object when the library has no members).
 *------------------------------------------------------------------*
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
@@ -200,6 +207,24 @@
     %if %sysfunc(libref(INLIB)) ^= 0 %then %do;
         %put ERROR: Failed to assign library to &indir;
         %abort;
+    %end;
+
+    /**Guard: exit gracefully when the library contains no SAS datasets**/
+    /**proc contents uses ODS capture which does not create the ALLVAROUT  **/
+    /**output object when the library has no members, causing all downstream**/
+    /**steps to fail with "File WORK.ALLVAROUT.DATA does not exist."        **/
+    %local ds_count;
+    proc sql noprint;
+        select count(*) into :ds_count trimmed
+        from dictionary.tables
+        where upcase(libname) = 'INLIB'
+          and memtype = 'DATA';
+    quit;
+
+    %if &ds_count = 0 %then %do;
+        %put NOTE: No SAS datasets found in &indir -- variable information document will not be created.;
+        libname INLIB clear;
+        %return;
     %end;
 
     /**Set output file path**/
