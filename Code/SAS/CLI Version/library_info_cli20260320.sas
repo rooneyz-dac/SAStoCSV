@@ -158,7 +158,7 @@
     %let g_parent = %scan(&name_path, -1, \/);
     %let gg_parent = %scan(&name_path, -2, \/);
     %let ggg_parent = %scan(&name_path, -3, \/);
-    %let out_file = &doc_dir\library_info_%sysfunc(compress(&ggg_parent,'_',ka))_%sysfunc(compress(&gg_parent,'_',ka))_%sysfunc(compress(&g_parent,'_',ka))_%sysfunc(today(),yymmddn8.).xlsx;
+    %let out_file = &doc_dir\library_info_%sysfunc(compress(&ggg_parent,'_',kad))_%sysfunc(compress(&gg_parent,'_',kad))_%sysfunc(compress(&g_parent,'_',kad))_%sysfunc(today(),yymmddn8.).xlsx;
     %put DEBUG: Output file = &out_file;
 
     /**Create table of SQL library data**/
