@@ -6,21 +6,6 @@
 | CREATED BY  : DAC Development Team
 | ORIGINAL    : Meyers, Jeffrey (07/28/2016)
 *------------------------------------------------------------------*
-| VERSION UPDATES:
-| 2025-01-21: Modified to accept CLI parameters via SYSPARM
-|   - Added input/output path parsing from SYSPARM
-|   - Added automatic creation of DAC_Documents folder
-|   - Added path validation
-| 2026-03-20: Extended SYSPARM to support optional macro parameters
-|   - Optional params passed as key=value pairs after output dir
-| 2026-05-19: Fixed dcreate return-value check
-|   - Replaced `%if &rc = %then` with `%if %length(&rc) = 0 %then`
-|     for the DAC_Documents directory-creation guard. dcreate returns
-|     the new directory name on success, causing %EVAL to abort with
-|     a numeric-operand error when the directory was successfully
-|     created.
-| See original data_specs macro for prior version history.
-*------------------------------------------------------------------*
 | PURPOSE
 | Create a data specifications sheet for all datasets in a
 | designated directory with CLI parameter support for automated

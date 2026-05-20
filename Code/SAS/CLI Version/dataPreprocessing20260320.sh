@@ -118,47 +118,6 @@
 # Created: 2025-11-22
 # Version: 1.6
 #
-# Version History:
-#   1.0 (2025-11-22): Initial release
-#   1.1 (2026-05-08): Added dataset name standardization step
-#     - New step [1/7]: runs rename_study_domains_cli20260320.sas before
-#       any conversion so all outputs use consistent domain-only names
-#       (e.g., AE_PLACEBO -> AE).
-#     - Renamed steps [1/6]-[6/6] to [2/7]-[7/7].
-#     - Added DAC_SAS to output structure; INPUT_DIR is updated to DAC_SAS
-#       or DAC_XPT when the rename step produces standardized files.
-#   1.2 (2026-05-12): Preserve original path segments in documentation filenames
-#     - Set NAME_DIR when DAC_SAS or DAC_XPT (rename) is created, matching the
-#       existing DAC_SDTM behaviour, so ggg_parent and gg_parent in output
-#       filenames always reflect the original input path.
-#     - Fixed VARIABLE_INFO_FILE prediction to use all three path segments
-#       (ggg_parent_gg_parent_g_parent) instead of only the leaf segment.
-#   1.3 (2026-05-12): Added detailed pipeline change log
-#     - Generates pipeline_change_log.txt in the DAC_Logs subdirectory on every run.
-#     - Records which files each script created, with timestamps.
-#     - Entries are sorted by the script/step that caused each change.
-#     - Rename step annotates which datasets were renamed and to what names.
-#     - XPT step annotates the conversion direction (SAS->XPT or XPT->SDTM).
-#   1.4 (2026-05-19): Dynamic SAS output folder naming
-#     - SAS standardization folder is now named DAC_<ParentFolderName> where
-#       ParentFolderName is the leaf segment of the input directory
-#       (e.g. if input is C:/data/rawdata, folder becomes DAC_rawdata).
-#     - Both the shell script and rename_study_domains_cli20260320.sas (v1.3)
-#       derive the same folder name from the input path.
-#   1.5 (2026-05-19): Default output to parent of input; overwrite guard
-#     - When -o is omitted, OUTPUT_DIR defaults to the parent folder of
-#       INPUT_DIR (e.g. input C:/study/trial/rawdata -> output C:/study/trial).
-#     - Before the pipeline begins, if any DAC_* subfolder already exists in
-#       OUTPUT_DIR the user is shown the list and prompted to confirm before
-#       continuing; answering anything other than y/yes aborts the run.
-#   1.6 (2026-05-19): Fix TRIAL_NAME derivation to use TRAILNAME segment
-#     - Input path format is .../PROVIDER/TRAILNAME/DATASET.
-#     - TRIAL_NAME is now derived from the parent of INPUT_DIR (TRAILNAME),
-#       not the grandparent (PROVIDER).  Previously the logic walked two levels
-#       up (grandparent), producing PROVIDER instead of TRAILNAME.
-#     - Documentation filenames in DAC_Documents continue to follow the
-#       FILENAME_PROVIDER_TRAILNAME_DATASET_DATE convention via ggg/gg/g_parent.
-#
 # Notes:
 #   - Script exits on first error (set -e)
 #   - Step 1 standardizes dataset names; subsequent steps use standardized names

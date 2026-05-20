@@ -41,19 +41,6 @@ Requirements:
 Notes:
     - Intended for CLI use on Windows; paths may be absolute or relative.
     - Header row is configurable in code if format changes.
-
-ChangeLog:
-    2026-01-05  Header updated to document behavior and column normalization.
-    2026-03-27  Sanitize path-part components with re.sub([^a-zA-Z0-9]) so Windows drive letters
-                (e.g. "C:") do not embed invalid characters in output filenames; outputs both
-                dictionary_*.csv and dictionary_*.xlsx to DAC_Documents.
-    2026-03-27  Accept optional input_dir argument; derive GGG/GG/G filename components from
-                input_dir (matching SAS variable_info naming convention) instead of output_dir.
-    2026-03-30  Switched argument parsing to argparse.
-    2026-05-18  Added SOURCE_TAB column: each row is tagged with the sheet name it was read
-                from, so the dictionary output retains a reference to the variable info tab.
-    2026-05-19  Preserve underscores in path segment components (PROVIDER, TRIALNAME, DATASET)
-                so output filenames match the FILENAME_PROVIDER_TRIALNAME_DATASET convention.
 """
 
 import argparse
