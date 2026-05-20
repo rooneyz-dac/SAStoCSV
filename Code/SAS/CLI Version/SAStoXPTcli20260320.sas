@@ -7,25 +7,6 @@
 | DATE CREATED : 2025-11-21
 | VERSION      : 2.1
 *------------------------------------------------------------------*
-| VERSION UPDATES:
-| 2025-11-21: Initial CLI release (v2.0)
-|   - Added SYSPARM parsing for input and output directories
-|   - Added bidirectional conversion (SAS7BDAT <-> XPT)
-|   - Added automatic creation of DAC_XPT and DAC_SDTM subfolders
-|   - Added conversion error log generation
-| 2026-03-20: File standardized to 20260320 naming convention
-|   - No functional changes; header and filename updated to match
-|     the pipeline versioning convention used across all CLI scripts
-| 2026-05-19: Fixed dcreate return-value check (v2.1)
-|   - Replaced `%if &rc = %then` with `%if %length(&rc) = 0 %then`
-|     for all three directory-creation guards (DAC_Logs, DAC_XPT,
-|     DAC_SDTM). dcreate returns the new directory name (a string)
-|     on success, causing %EVAL to abort with "character operand
-|     found where numeric operand required" when the %if condition
-|     tried to compare that string numerically. Using %length()
-|     correctly detects an empty return value (failure) without
-|     triggering a numeric-evaluation error.
-*------------------------------------------------------------------*
 | PURPOSE
 | Performs batch bidirectional conversion of SAS datasets between
 | SAS7BDAT and XPT (SAS Transport) formats. When .sas7bdat files

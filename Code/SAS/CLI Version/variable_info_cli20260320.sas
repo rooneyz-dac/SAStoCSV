@@ -6,65 +6,6 @@
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-01-22
 *------------------------------------------------------------------*
-| VERSION UPDATES:
-| 2025-01-22: Initial CLI release
-|   - Added SYSPARM parsing for input and output directories
-|   - Added automatic creation of DAC_Documents output subfolder
-|   - Added path validation for input and output directories
-|   - Output file name includes library name and date stamp
-|   - Each dataset is placed on its own sheet in the Excel workbook
-| 2026-03-28: Column formatting update
-|   - Dropped FORMAT and INFORMAT columns from output
-|   - Enforced column order: NUM, VARIABLE, TYPE, LEN, POS, LABEL
-|   - Switched from PROC PRINT to PROC REPORT to enable per-column
-|     width formatting in the Excel workbook output
-|   - Centered alignment on all columns (header and data cells)
-|   - Added variant column-name renaming: variant column names such as
-|     LENGTH, VARIABLE_NAME, VAR_NUM, etc. are normalized to the
-|     standard desired names (NUM, VARIABLE, TYPE, LEN, POS, LABEL) before
-|     any columns are dropped, with DEBUG/NOTE logging for renames
-|   - Added dynamic column-drop logic: any column not in the desired
-|     list is removed from the dataset before output, with DEBUG
-|     notification printed to the console and a highlighted NOTE
-|     written to the SAS log
-| 2026-05-18: Bug fix - empty drop_cols guard
-|   - Wrapped %sysfunc(strip(&drop_cols)) in a %length > 0 guard to
-|     prevent "too few arguments" ERROR when all columns are already
-|     in the desired list and drop_cols is empty
-| 2026-05-19: Fixed dcreate return-value check
-|   - Replaced `%if &rc = %then` with `%if %length(&rc) = 0 %then`
-|     for the DAC_Documents directory-creation guard. dcreate returns
-|     the new directory name on success, causing %EVAL to abort with
-|     a numeric-operand error when the directory was successfully
-|     created.
-| 2026-03-29: Column name variant fix
-|   - Added OPTIONS VALIDVARNAME=V7 to force standard V7 column names
-|     in PROC CONTENTS ODS output (prevents space-containing names
-|     like 'Variable Number' that occur under VALIDVARNAME=ANY)
-|   - Added space-containing column name variants to the rename map
-|     as defense-in-depth for environments that override VALIDVARNAME:
-|       NUM      <- VARIABLE NUMBER, VAR NUM, VAR NO
-|       VARIABLE <- VARIABLE NAME, VAR NAME
-|       TYPE     <- VAR TYPE, DATA TYPE, VARIABLE TYPE
-|       LEN      <- (no space variants needed)
-|       POS      <- POSITION, START POSITION, COLUMN POSITION, START
-|       LABEL    <- VARIABLE LABEL, VAR LABEL
-|   - Updated rename SQL to use SAS name literals ('name'n) for any
-|     column names containing spaces, so PROC DATASETS RENAME works
-|     correctly under VALIDVARNAME=ANY
-| 2026-05-20: Empty-library guard
-|   - Added dataset count check immediately after the INLIB libname
-|     assignment. When 0 SAS datasets are found in the input directory,
-|     the macro now logs a NOTE and returns gracefully instead of
-|     crashing with "ERROR: File WORK.ALLVAROUT.DATA does not exist."
-|     (which occurred because proc contents ODS capture does not create
-|     the ALLVAROUT output object when the library has no members).
-| 2026-05-20: Strip library prefix from MEMBER column
-|   - Added a data step after column cleanup to replace MEMBER values
-|     like "INLIB.AE" with just the dataset name "AE" by taking the
-|     last dot-delimited token (scan(member,-1,'.')). This affects
-|     Excel sheet names, BY-group titles, and any downstream consumers.
-*------------------------------------------------------------------*
 | PURPOSE
 | Creates a variable-level information report for all datasets in a
 | designated directory. For each dataset the report lists variable

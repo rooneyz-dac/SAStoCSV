@@ -8,44 +8,6 @@
 | DATE CREATED : 2026-05-08
 | VERSION      : 1.4
 *------------------------------------------------------------------*
-| VERSION UPDATES:
-| 2026-05-08: Initial CLI release (v1.0)
-|   - Added SYSPARM parsing for input and output directories
-|   - Standardizes dataset names by keeping only the prefix before
-|     the first underscore (e.g., AE_PLACEBO -> AE)
-|   - Copies SAS7BDAT datasets to DAC_SAS subfolder when any file
-|     in the input directory has a non-standard (suffixed) name
-|   - Copies XPT datasets to DAC_XPT subfolder when any XPT file
-|     in the input directory has a non-standard name
-|   - Files without underscores are copied unchanged to the new
-|     folder so the folder is a complete, self-consistent set
-| 2026-05-12: SAS7BDAT logic updated to match OriginalSAS (v1.1)
-|   - Replaced Windows DIR-based file listing with libname +
-|     dictionary.tables discovery (aligns with
-|     rename_study_domains_ZRlocalCopy.sas)
-|   - ALL datasets are now copied to DAC_SAS first via proc copy,
-|     then datasets with suffixes are renamed in-place in DAC_SAS
-|     using proc datasets change (same approach as original script)
-|   - Standard name derived with scan(memname, 1, '_') -- identical
-|     to the original script
-| 2026-05-12: Fix standard name extraction (v1.2)
-|   - Changed scan position from 1 to -1 so the domain name is taken
-|     from the LAST token after the final underscore (e.g.
-|     BERKELEY_AE -> AE).  Using position 1 caused all datasets to
-|     map to the study prefix (e.g. BERKELEY), triggering a duplicate-
-|     name collision for every dataset in the library.
-| 2026-05-19: Dynamic SAS output folder naming (v1.3)
-|   - SAS output folder is now named DAC_<ParentFolderName> where
-|     ParentFolderName is the leaf segment of the input directory
-|     (e.g. if input is C:\data\rawdata, folder becomes DAC_rawdata).
-|   - Handles both Windows backslash and Unix forward slash separators.
-| 2026-05-19: Fixed dcreate return-value check (v1.4)
-|   - Replaced `%if &_rc = %then` with `%if %length(&_rc) = 0 %then`
-|     for both directory-creation guards (DAC_<ParentFolderName> and
-|     DAC_XPT). dcreate returns the new directory name on success,
-|     causing %EVAL to abort with a numeric-operand error when the
-|     directory was successfully created.
-*------------------------------------------------------------------*
 | PURPOSE
 | Checks SAS (.sas7bdat) and XPT (.xpt) datasets in the specified
 | input directory and standardizes their names by removing

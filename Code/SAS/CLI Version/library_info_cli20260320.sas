@@ -6,22 +6,6 @@
 | CREATED BY   : DAC Development Team
 | DATE CREATED : 2025-01-21
 *------------------------------------------------------------------*
-| VERSION UPDATES:
-| 2025-01-21: Initial CLI release
-|   - Added SYSPARM parsing for input and output directories
-|   - Added automatic creation of DAC_Documents output subfolder
-|   - Added path validation for input and output directories
-|   - Output file name includes library name and date stamp
-| 2026-03-20: File standardized to 20260320 naming convention
-|   - No functional changes; header and filename updated to match
-|     the pipeline versioning convention used across all CLI scripts
-| 2026-05-19: Fixed dcreate return-value check (v1.1)
-|   - Replaced `%if &rc = %then` with `%if %length(&rc) = 0 %then`
-|     for the DAC_Documents directory-creation guard. dcreate returns
-|     the new directory name on success, causing %EVAL to abort with
-|     a numeric-operand error when the directory was successfully
-|     created.
-*------------------------------------------------------------------*
 | PURPOSE
 | Creates a library information summary for all datasets found in a
 | designated directory. The output lists each dataset's name, label,
