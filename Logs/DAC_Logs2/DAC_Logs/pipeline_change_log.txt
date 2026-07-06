@@ -1,0 +1,75 @@
+=======================================================
+ Pipeline Change Log
+ Generated:  2026-07-06 14:45:43
+ Input:      C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen\SDTMs
+ Output:     C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen
+ Trial:      TestNewIpsen
+=======================================================
+ Changes are recorded below, sorted by the script that
+ caused each change.  Each section shows the files
+ created during that pipeline step.
+=======================================================
+
+-------------------------------------------------------
+Step [1/7]  Script: rename_study_domains_cli20260320.sas
+Timestamp: 2026-07-06 14:45:44
+
+  Files Created:
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_Logs/rename_domains.log
+
+-------------------------------------------------------
+Step [2/7]  Script: SAStoXPTcli20260320.sas
+Timestamp: 2026-07-06 14:45:47
+
+  Files Created:
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_Logs/sas_to_xpt.log
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_Logs/xpt_error_log.txt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ae.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ce.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/cm.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/co.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/da.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/dm.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ds.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/dv.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ec.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/eg.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ex.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/fa.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ho.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ie.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/lb.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/mh.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/mi.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ml.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/mo.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/pc.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/pe.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/pr.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/qs.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/re.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/rp.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/sc.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/se.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/su.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppae.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppcm.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppdm.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppds.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppdv.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppeg.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppex.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/supplb.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppmi.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/suppmo.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/sv.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ta.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/te.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ts.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/tv.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/ve.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/vs.xpt
+    + C:\Users\Public\Desktop\shared\Zach\01_data_preprocessing\TestNewIpsen/DAC_XPT/wr.xpt
+
+  Details:
+    Conversion direction: SAS7BDAT -> XPT (XPT exports written to DAC_XPT)
