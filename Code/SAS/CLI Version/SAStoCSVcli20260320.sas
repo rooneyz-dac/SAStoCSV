@@ -153,7 +153,9 @@ quit;
 
 /* 6) Macro to export all datasets to CSV in csv_dir */
 %macro export_all_to_csv;
-    %local n i dsname;
+    %local n i dsname nvar _err_count;
+    %let _err_count = 0;
+
     proc sql noprint;
         select count(*) into :n trimmed from work._dslist;
     quit;
@@ -169,32 +171,50 @@ quit;
             from work._dslist
             where monotonic() = &i;
         quit;
-        %let csvfile = &csv_dir.\&dsname..csv;
-        %put NOTE: Exporting INLIB.&dsname to &csvfile;
-        proc export data=inlib.&dsname
-            outfile="&csvfile"
-            dbms=csv
-            replace;
-        run;
+
+        /* Check that the dataset has at least one variable before exporting */
+        proc sql noprint;
+            select count(*) into :nvar trimmed
+            from dictionary.columns
+            where libname = upcase('INLIB')
+              and memname = upcase("&dsname");
+        quit;
+
+        %if &nvar = 0 %then %do;
+            %put WARNING: Skipping INLIB.&dsname - dataset has no variables defined.;
+            %let _err_count = %eval(&_err_count + 1);
+        %end;
+        %else %do;
+            %let csvfile = &csv_dir.\&dsname..csv;
+            %put NOTE: Exporting INLIB.&dsname to &csvfile;
+            proc export data=inlib.&dsname
+                outfile="&csvfile"
+                dbms=csv
+                replace;
+            run;
+        %end;
     %end;
+
+    /* Pass error count out of macro scope */
+    %global _export_err_count;
+    %let _export_err_count = &_err_count;
 %mend export_all_to_csv;
 
 %export_all_to_csv;
 
-/* 7) Create error report based on SYSERR */
+/* 7) Create error report */
 data _null_;
-    length dt $20 syserr_val $10;
+    length dt $20;
     file errlog;
     dt = put(datetime(), datetime20.);
-    syserr_val = symget('SYSERR');
 
     put "SAS Error Report";
     put "Generated: " dt;
     put "----------------------------------------";
 
-    if syserr_val ne '0' then do;
-        put "Errors detected. SYSERR = " syserr_val;
-        put "Check the SAS log for details.";
+    if symget('_export_err_count') ne '0' then do;
+        put "Warnings: " symget('_export_err_count') " dataset(s) skipped due to no variables defined.";
+        put "Check the SAS log for details (search for WARNING: Skipping).";
     end;
     else do;
         put "No errors detected in the SAS run.";
