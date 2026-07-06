@@ -1,0 +1,5049 @@
+1                                           The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
+NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
+      Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
+NOTE: This session is executing on the X64_DSRV16  platform.
+
+
+
+NOTE: Updated analytical products:
+      
+      SAS/STAT 14.3
+      SAS/ETS 14.3
+      SAS/IML 14.3
+      SAS/QC 14.3
+
+WARNING: Your system is scheduled to expire on July 15, 2026, which is 9 days from now. The SAS 
+         System will no longer function on or after that date. Please contact your SAS Installation 
+         Representative to obtain your updated SAS Installation Data (SID) file, which includes 
+         SETINIT information.
+To locate the name of your SAS Installation Representative go to http://support.sas.com/repfinder and 
+provide your site number 70090515 and company name as UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R. On the 
+SAS REP list provided, locate the REP for operating system Windows.
+NOTE: Additional host information:
+
+ X64_DSRV16 WIN 10.0.26100  Server
+
+NOTE: SAS initialization used:
+      real time           0.46 seconds
+      cpu time            0.38 seconds
+      
+1          /*------------------------------------------------------------------*
+2          | PROGRAM NAME : SAStoCSVcli20260320.sas
+3          | SHORT DESC   : Batch converts all SAS datasets in a directory to
+4          |                CSV format via command-line interface
+5          *------------------------------------------------------------------*
+6          | CREATED BY   : DAC Development Team
+7          | DATE CREATED : 2025-11-21
+8          *------------------------------------------------------------------*
+9          | PURPOSE
+10         | Exports all SAS datasets (.sas7bdat) found in a specified input
+11         | directory to CSV format. Output CSV files are placed in a
+12         | DAC_CSV subfolder within the specified output directory. An error
+13         | log file (error_log.txt) is written to the DAC_Logs subdirectory upon
+14         | completion summarizing any SAS errors encountered.
+15         |
+16         | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+17         | INPUT_DIRECTORY  = Path to the folder containing .sas7bdat files
+18         |                    to be converted
+19         | OUTPUT_DIRECTORY = Path to the folder where the DAC_CSV subfolder
+20         |                    and error log will be created
+21         |
+22         | 2.0: OPTIONAL PARAMETERS
+23         | None. All parameters are supplied via SYSPARM.
+24         |
+25         | USAGE:
+2                                           The SAS System                  14:16 Monday, July 6, 2026
+
+26         |   sas -sysparm "input_directory|output_directory"
+27         |       -sysin SAStoCSVcli20260320.sas
+28         |
+29         | OUTPUT STRUCTURE:
+30         |   output_directory\
+31         |   ├── DAC_CSV\              - CSV exports of all SAS datasets
+32         |   └── DAC_Logs\
+33         |       └── error_log.txt     - Error summary from the SAS run
+34         *------------------------------------------------------------------*
+35         | OPERATING SYSTEM COMPATIBILITY
+36         | SAS v9.4 or Higher: Yes
+37         *------------------------------------------------------------------*
+38         | MACRO CALL
+39         |
+40         | Not applicable. Script is invoked directly via the SAS command
+41         | line using -sysin and -sysparm.
+42         *------------------------------------------------------------------*
+43         | EXAMPLES
+44         |
+45         | Basic usage:
+46         |   sas -sysparm "C:\data\input|C:\data\output"
+47         |       -sysin SAStoCSVcli20260320.sas
+48         |
+49         | Using a study-specific output folder:
+50         |   sas -sysparm "C:\studies\trial1\sas|C:\studies\trial1\output"
+51         |       -sysin SAStoCSVcli20260320.sas
+52         *------------------------------------------------------------------*/
+53         
+54         /* 1) Parse SYSPARM to get input and output directories */
+55         %let params = %sysfunc(dequote(&SYSPARM));
+56         
+57         %if %length(&params) = 0 %then %do;
+58             %put ERROR: SYSPARM not provided. You must specify input and output directories.;
+59             %put ERROR: Usage: sas -sysin path\to\script.sas -SYSPARM
+59       ! "C:\path\to\data|C:\path\to\output";
+60             %abort cancel;
+61         %end;
+62         
+63         /* Split SYSPARM by pipe delimiter */
+64         %let in_dir = %scan(&params, 1, |);
+65         %let out_dir = %scan(&params, 2, |);
+66         
+67         %if %length(&in_dir) = 0 %then %do;
+68             %put ERROR: Input directory not provided in SYSPARM.;
+69             %put ERROR: Usage: sas -sysin path\to\script.sas -SYSPARM
+69       ! "C:\path\to\data|C:\path\to\output";
+70             %abort cancel;
+71         %end;
+72         
+73         %if %length(&out_dir) = 0 %then %do;
+74             %put ERROR: Output directory not provided in SYSPARM.;
+75             %put ERROR: Usage: sas -sysin path\to\script.sas -SYSPARM
+75       ! "C:\path\to\data|C:\path\to\output";
+76             %abort cancel;
+3                                           The SAS System                  14:16 Monday, July 6, 2026
+
+77         %end;
+78         
+79         /* Create csv_dir for CSV output */
+80         %let csv_dir = &out_dir.\DAC_CSV;
+81         
+82         %put NOTE: Input directory = &in_dir;
+NOTE: Input directory = E:\Data\04_ProjectData\MASHPDB\IPSEN\Resolve-IT_20250820\SDTMs
+83         %put NOTE: Output directory = &out_dir;
+NOTE: Output directory = E:\out\testIpsen
+84         %put NOTE: CSV directory = &csv_dir;
+NOTE: CSV directory = E:\out\testIpsen\DAC_CSV
+85         
+86         /* 2) Point a libname to input directory (for *.sas7bdat) */
+87         libname inlib "&in_dir";
+NOTE: Libref INLIB was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: E:\Data\04_ProjectData\MASHPDB\IPSEN\Resolve-IT_20250820\SDTMs
+88         
+89         /* 3) Create output folder if it does not exist */
+90         options noxwait noxsync;
+91         data _null_;
+WARNING: The Base SAS Software product with which DATASTEP is associated will be expiring soon, and 
+         is currently in warning mode to indicate this upcoming expiration. Please run PROC SETINIT 
+         to obtain more information on your warning period.
+92             length out $260 parent $260 rc $260;
+93             out = "&out_dir";
+94         
+95             /* Remove trailing backslash if present */
+96             if substr(out, length(out), 1) = '\' then
+97                 out = substr(out, 1, length(out) - 1);
+98         
+99             if fileexist(out) then
+100                put "NOTE: Directory &out_dir already exists.";
+101            else do;
+102                /* Get parent directory for dcreate */
+103                pos = length(out) - index(reverse(out), '\') + 1;
+104                if pos > 0 and pos < length(out) then do;
+105                    parent = substr(out, 1, pos - 1);
+106                    folder = substr(out, pos + 1);
+107                    rc = dcreate(folder, parent);
+108                end;
+109                else do;
+110                    rc = dcreate(out, '');
+111                end;
+112        
+113                if rc ne '' then put "NOTE: Created directory &out_dir successfully.";
+114                else put "ERROR: Could not create directory &out_dir";
+115            end;
+116        run;
+
+NOTE: Directory E:\out\testIpsen already exists.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+4                                           The SAS System                  14:16 Monday, July 6, 2026
+
+      
+
+117        
+118        /* 3a) Create DAC_CSV subfolder */
+119        data _null_;
+120            length rc $260;
+121            if fileexist("&csv_dir") then
+122                put "NOTE: Directory &csv_dir already exists.";
+123            else do;
+124                rc = dcreate('DAC_CSV', "&out_dir");
+125                if rc ne '' then put "NOTE: Created directory &csv_dir successfully.";
+126                else put "ERROR: Could not create directory &csv_dir";
+127            end;
+128        run;
+
+NOTE: Created directory E:\out\testIpsen\DAC_CSV successfully.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+129        
+130        /* 3b) Create DAC_Logs subfolder */
+131        data _null_;
+132            length rc $260;
+133            if fileexist("&out_dir.\DAC_Logs") then
+134                put "NOTE: Directory &out_dir.\DAC_Logs already exists.";
+135            else do;
+136                rc = dcreate('DAC_Logs', "&out_dir");
+137                if rc ne '' then put "NOTE: Created directory &out_dir.\DAC_Logs successfully.";
+138                else put "ERROR: Could not create directory &out_dir.\DAC_Logs";
+139            end;
+140        run;
+
+NOTE: Directory E:\out\testIpsen\DAC_Logs already exists.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+141        
+142        /* 4) Set up error log file in DAC_Logs subdirectory */
+143        filename errlog "&out_dir.\DAC_Logs\error_log.txt";
+144        
+145        /* 5) Get list of all datasets in INDIR */
+146        proc sql noprint;
+147            create table work._dslist as
+148            select memname
+149            from dictionary.tables
+150            where libname = upcase('INLIB')
+151            order by memname;
+NOTE: Table WORK._DSLIST created, with 46 rows and 1 columns.
+
+152        quit;
+5                                           The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+153        
+154        /* 6) Macro to export all datasets to CSV in csv_dir */
+155        %macro export_all_to_csv;
+156            %local n i dsname;
+157            proc sql noprint;
+158                select count(*) into :n trimmed from work._dslist;
+159            quit;
+160        
+161            %if &n = 0 %then %do;
+162                %put NOTE: No SAS datasets found in &in_dir;
+163                %return;
+164            %end;
+165        
+166            %do i = 1 %to &n;
+167                proc sql noprint;
+168                    select memname into :dsname trimmed
+169                    from work._dslist
+170                    where monotonic() = &i;
+171                quit;
+172                %let csvfile = &csv_dir.\&dsname..csv;
+173                %put NOTE: Exporting INLIB.&dsname to &csvfile;
+174                proc export data=inlib.&dsname
+175                    outfile="&csvfile"
+176                    dbms=csv
+177                    replace;
+178                run;
+179            %end;
+180        %mend export_all_to_csv;
+181        
+182        %export_all_to_csv;
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.AE to E:\out\testIpsen\DAC_CSV\AE.csv
+
+183         /**********************************************************************
+184         *   PRODUCT:   SAS
+185         *   VERSION:   9.4
+186         *   CREATOR:   External File Interface
+187         *   DATE:      06JUL26
+188         *   DESC:      Generated SAS Datastep Code
+189         *   TEMPLATE SOURCE:  (None Specified.)
+6                                           The SAS System                  14:16 Monday, July 6, 2026
+
+190         ***********************************************************************/
+191            data _null_;
+192            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+193            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+194            file 'E:\out\testIpsen\DAC_CSV\AE.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+195            if _n_ = 1 then        /* write column names or labels */
+196             do;
+197               put
+198                  "STUDYID"
+199               ','
+200                  "DOMAIN"
+201               ','
+202                  "USUBJID"
+203               ','
+204                  "AESEQ"
+205               ','
+206                  "AESPID"
+207               ','
+208                  "AETERM"
+209               ','
+210                  "AELLT"
+211               ','
+212                  "AELLTCD"
+213               ','
+214                  "AEDECOD"
+215               ','
+216                  "AEPTCD"
+217               ','
+218                  "AEHLT"
+219               ','
+220                  "AEHLTCD"
+221               ','
+222                  "AEHLGT"
+223               ','
+224                  "AEHLGTCD"
+225               ','
+226                  "AEBODSYS"
+227               ','
+228                  "AEBDSYCD"
+229               ','
+230                  "AESOC"
+231               ','
+232                  "AESOCCD"
+233               ','
+234                  "AESEV"
+235               ','
+236                  "AESER"
+237               ','
+238                  "AEACN"
+239               ','
+240                  "AEACNOTH"
+241               ','
+242                  "AEREL"
+243               ','
+7                                           The SAS System                  14:16 Monday, July 6, 2026
+
+244                  "AEOUT"
+245               ','
+246                  "AESCONG"
+247               ','
+248                  "AESDISAB"
+249               ','
+250                  "AESDTH"
+251               ','
+252                  "AESHOSP"
+253               ','
+254                  "AESLIFE"
+255               ','
+256                  "AESMIE"
+257               ','
+258                  "EPOCH"
+259               ','
+260                  "AESTDTC"
+261               ','
+262                  "AEENDTC"
+263               ','
+264                  "AESTDY"
+265               ','
+266                  "AEENDY"
+267               ','
+268                  "AEENRF"
+269               ;
+270             end;
+271           set  INLIB.AE   end=EFIEOD;
+272               format STUDYID $12. ;
+273               format DOMAIN $2. ;
+274               format USUBJID $23. ;
+275               format AESEQ best12. ;
+276               format AESPID $5. ;
+277               format AETERM $100. ;
+278               format AELLT $65. ;
+279               format AELLTCD best12. ;
+280               format AEDECOD $61. ;
+281               format AEPTCD best12. ;
+282               format AEHLT $79. ;
+283               format AEHLTCD best12. ;
+284               format AEHLGT $86. ;
+285               format AEHLGTCD best12. ;
+286               format AEBODSYS $67. ;
+287               format AEBDSYCD best12. ;
+288               format AESOC $67. ;
+289               format AESOCCD best12. ;
+290               format AESEV $8. ;
+291               format AESER $1. ;
+292               format AEACN $16. ;
+293               format AEACNOTH $199. ;
+294               format AEREL $16. ;
+295               format AEOUT $32. ;
+296               format AESCONG $1. ;
+297               format AESDISAB $1. ;
+8                                           The SAS System                  14:16 Monday, July 6, 2026
+
+298               format AESDTH $1. ;
+299               format AESHOSP $1. ;
+300               format AESLIFE $1. ;
+301               format AESMIE $1. ;
+302               format EPOCH $22. ;
+303               format AESTDTC $10. ;
+304               format AEENDTC $10. ;
+305               format AESTDY best12. ;
+306               format AEENDY best12. ;
+307               format AEENRF $12. ;
+308             do;
+309               EFIOUT + 1;
+310               put STUDYID $ @;
+311               put DOMAIN $ @;
+312               put USUBJID $ @;
+313               put AESEQ @;
+314               put AESPID $ @;
+315               put AETERM $ @;
+316               put AELLT $ @;
+317               put AELLTCD @;
+318               put AEDECOD $ @;
+319               put AEPTCD @;
+320               put AEHLT $ @;
+321               put AEHLTCD @;
+322               put AEHLGT $ @;
+323               put AEHLGTCD @;
+324               put AEBODSYS $ @;
+325               put AEBDSYCD @;
+326               put AESOC $ @;
+327               put AESOCCD @;
+328               put AESEV $ @;
+329               put AESER $ @;
+330               put AEACN $ @;
+331               put AEACNOTH $ @;
+332               put AEREL $ @;
+333               put AEOUT $ @;
+334               put AESCONG $ @;
+335               put AESDISAB $ @;
+336               put AESDTH $ @;
+337               put AESHOSP $ @;
+338               put AESLIFE $ @;
+339               put AESMIE $ @;
+340               put EPOCH $ @;
+341               put AESTDTC $ @;
+342               put AEENDTC $ @;
+343               put AESTDY @;
+344               put AEENDY @;
+345               put AEENRF $ ;
+346               ;
+347             end;
+348            if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+349            if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+350            run;
+
+9                                           The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\AE.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\AE.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 4014 records were written to the file 'E:\out\testIpsen\DAC_CSV\AE.csv'.
+      The minimum record length was 258.
+      The maximum record length was 486.
+NOTE: There were 4013 observations read from the data set INLIB.AE.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+4013 records created in E:\out\testIpsen\DAC_CSV\AE.csv from INLIB.AE.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\AE.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.07 seconds
+      cpu time            0.07 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.CE to E:\out\testIpsen\DAC_CSV\CE.csv
+
+351         /**********************************************************************
+352         *   PRODUCT:   SAS
+353         *   VERSION:   9.4
+354         *   CREATOR:   External File Interface
+355         *   DATE:      06JUL26
+356         *   DESC:      Generated SAS Datastep Code
+357         *   TEMPLATE SOURCE:  (None Specified.)
+358         ***********************************************************************/
+359            data _null_;
+360            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+361            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+362            file 'E:\out\testIpsen\DAC_CSV\CE.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+363            if _n_ = 1 then        /* write column names or labels */
+364             do;
+365               put
+366                  "STUDYID"
+367               ','
+368                  "DOMAIN"
+369               ','
+370                  "USUBJID"
+371               ','
+372                  "CESEQ"
+373               ','
+10                                          The SAS System                  14:16 Monday, July 6, 2026
+
+374                  "CEREFID"
+375               ','
+376                  "CETERM"
+377               ','
+378                  "CECAT"
+379               ','
+380                  "CEPRESP"
+381               ','
+382                  "CEOCCUR"
+383               ','
+384                  "EPOCH"
+385               ','
+386                  "CESTDTC"
+387               ','
+388                  "CESTDY"
+389               ;
+390             end;
+391           set  INLIB.CE   end=EFIEOD;
+392               format STUDYID $12. ;
+393               format DOMAIN $2. ;
+394               format USUBJID $23. ;
+395               format CESEQ best12. ;
+396               format CEREFID $7. ;
+397               format CETERM $48. ;
+398               format CECAT $44. ;
+399               format CEPRESP $1. ;
+400               format CEOCCUR $1. ;
+401               format EPOCH $22. ;
+402               format CESTDTC $10. ;
+403               format CESTDY best12. ;
+404             do;
+405               EFIOUT + 1;
+406               put STUDYID $ @;
+407               put DOMAIN $ @;
+408               put USUBJID $ @;
+409               put CESEQ @;
+410               put CEREFID $ @;
+411               put CETERM $ @;
+412               put CECAT $ @;
+413               put CEPRESP $ @;
+414               put CEOCCUR $ @;
+415               put EPOCH $ @;
+416               put CESTDTC $ @;
+417               put CESTDY ;
+418               ;
+419             end;
+420            if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+421            if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+422            run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\CE.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\CE.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+11                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 57 records were written to the file 'E:\out\testIpsen\DAC_CSV\CE.csv'.
+      The minimum record length was 86.
+      The maximum record length was 127.
+NOTE: There were 56 observations read from the data set INLIB.CE.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+56 records created in E:\out\testIpsen\DAC_CSV\CE.csv from INLIB.CE.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\CE.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.CM to E:\out\testIpsen\DAC_CSV\CM.csv
+
+423         /**********************************************************************
+424         *   PRODUCT:   SAS
+425         *   VERSION:   9.4
+426         *   CREATOR:   External File Interface
+427         *   DATE:      06JUL26
+428         *   DESC:      Generated SAS Datastep Code
+429         *   TEMPLATE SOURCE:  (None Specified.)
+430         ***********************************************************************/
+431            data _null_;
+432            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+433            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+434            file 'E:\out\testIpsen\DAC_CSV\CM.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+435            if _n_ = 1 then        /* write column names or labels */
+436             do;
+437               put
+438                  "STUDYID"
+439               ','
+440                  "DOMAIN"
+441               ','
+442                  "USUBJID"
+443               ','
+444                  "CMSEQ"
+445               ','
+446                  "CMTRT"
+447               ','
+448                  "CMMODIFY"
+449               ','
+12                                          The SAS System                  14:16 Monday, July 6, 2026
+
+450                  "CMDECOD"
+451               ','
+452                  "CMCAT"
+453               ','
+454                  "CMINDC"
+455               ','
+456                  "CMCLAS"
+457               ','
+458                  "CMCLASCD"
+459               ','
+460                  "CMDOSE"
+461               ','
+462                  "CMDOSU"
+463               ','
+464                  "CMDOSFRM"
+465               ','
+466                  "CMDOSFRQ"
+467               ','
+468                  "CMROUTE"
+469               ','
+470                  "EPOCH"
+471               ','
+472                  "CMSTDTC"
+473               ','
+474                  "CMENDTC"
+475               ','
+476                  "CMSTDY"
+477               ','
+478                  "CMENDY"
+479               ','
+480                  "CMENRF"
+481               ;
+482             end;
+483           set  INLIB.CM   end=EFIEOD;
+484               format STUDYID $12. ;
+485               format DOMAIN $2. ;
+486               format USUBJID $23. ;
+487               format CMSEQ best12. ;
+488               format CMTRT $33. ;
+489               format CMMODIFY $200. ;
+490               format CMDECOD $200. ;
+491               format CMCAT $23. ;
+492               format CMINDC $194. ;
+493               format CMCLAS $96. ;
+494               format CMCLASCD $5. ;
+495               format CMDOSE best12. ;
+496               format CMDOSU $200. ;
+497               format CMDOSFRM $196. ;
+498               format CMDOSFRQ $148. ;
+499               format CMROUTE $60. ;
+500               format EPOCH $22. ;
+501               format CMSTDTC $10. ;
+502               format CMENDTC $10. ;
+503               format CMSTDY best12. ;
+13                                          The SAS System                  14:16 Monday, July 6, 2026
+
+504               format CMENDY best12. ;
+505               format CMENRF $5. ;
+506             do;
+507               EFIOUT + 1;
+508               put STUDYID $ @;
+509               put DOMAIN $ @;
+510               put USUBJID $ @;
+511               put CMSEQ @;
+512               put CMTRT $ @;
+513               put CMMODIFY $ @;
+514               put CMDECOD $ @;
+515               put CMCAT $ @;
+516               put CMINDC $ @;
+517               put CMCLAS $ @;
+518               put CMCLASCD $ @;
+519               put CMDOSE @;
+520               put CMDOSU $ @;
+521               put CMDOSFRM $ @;
+522               put CMDOSFRQ $ @;
+523               put CMROUTE $ @;
+524               put EPOCH $ @;
+525               put CMSTDTC $ @;
+526               put CMENDTC $ @;
+527               put CMSTDY @;
+528               put CMENDY @;
+529               put CMENRF $ ;
+530               ;
+531             end;
+532            if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+533            if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+534            run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\CM.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\CM.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 12803 records were written to the file 'E:\out\testIpsen\DAC_CSV\CM.csv'.
+      The minimum record length was 102.
+      The maximum record length was 367.
+NOTE: There were 12802 observations read from the data set INLIB.CM.
+NOTE: DATA statement used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+12802 records created in E:\out\testIpsen\DAC_CSV\CM.csv from INLIB.CM.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\CM.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.06 seconds
+      cpu time            0.07 seconds
+14                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.CO to E:\out\testIpsen\DAC_CSV\CO.csv
+
+NOTE: No variables in data set INLIB.CO.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: Exporting INLIB.DA to E:\out\testIpsen\DAC_CSV\DA.csv
+
+535         /**********************************************************************
+536         *   PRODUCT:   SAS
+537         *   VERSION:   9.4
+538         *   CREATOR:   External File Interface
+539         *   DATE:      06JUL26
+540         *   DESC:      Generated SAS Datastep Code
+541         *   TEMPLATE SOURCE:  (None Specified.)
+542         ***********************************************************************/
+543            data _null_;
+544            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+545            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+546            file 'E:\out\testIpsen\DAC_CSV\DA.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+547            if _n_ = 1 then        /* write column names or labels */
+548             do;
+549               put
+550                  "STUDYID"
+551               ','
+552                  "DOMAIN"
+553               ','
+554                  "USUBJID"
+555               ','
+556                  "DASEQ"
+557               ','
+558                  "DATESTCD"
+559               ','
+560                  "DATEST"
+561               ','
+562                  "DACAT"
+563               ','
+15                                          The SAS System                  14:16 Monday, July 6, 2026
+
+564                  "DAORRES"
+565               ','
+566                  "DAORRESU"
+567               ','
+568                  "DASTRESC"
+569               ','
+570                  "DASTRESN"
+571               ','
+572                  "DASTRESU"
+573               ','
+574                  "VISITNUM"
+575               ','
+576                  "VISIT"
+577               ','
+578                  "VISITDY"
+579               ','
+580                  "EPOCH"
+581               ','
+582                  "DADTC"
+583               ','
+584                  "DADY"
+585               ;
+586             end;
+587           set  INLIB.DA   end=EFIEOD;
+588               format STUDYID $12. ;
+589               format DOMAIN $2. ;
+590               format USUBJID $23. ;
+591               format DASEQ best12. ;
+592               format DATESTCD $7. ;
+593               format DATEST $16. ;
+594               format DACAT $16. ;
+595               format DAORRES $3. ;
+596               format DAORRESU $6. ;
+597               format DASTRESC $3. ;
+598               format DASTRESN best12. ;
+599               format DASTRESU $6. ;
+600               format VISITNUM best12. ;
+601               format VISIT $16. ;
+602               format VISITDY best12. ;
+603               format EPOCH $22. ;
+604               format DADTC $10. ;
+605               format DADY best12. ;
+606             do;
+607               EFIOUT + 1;
+608               put STUDYID $ @;
+609               put DOMAIN $ @;
+610               put USUBJID $ @;
+611               put DASEQ @;
+612               put DATESTCD $ @;
+613               put DATEST $ @;
+614               put DACAT $ @;
+615               put DAORRES $ @;
+616               put DAORRESU $ @;
+617               put DASTRESC $ @;
+16                                          The SAS System                  14:16 Monday, July 6, 2026
+
+618               put DASTRESN @;
+619               put DASTRESU $ @;
+620               put VISITNUM @;
+621               put VISIT $ @;
+622               put VISITDY @;
+623               put EPOCH $ @;
+624               put DADTC $ @;
+625               put DADY ;
+626               ;
+627             end;
+628            if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+629            if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+630            run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\DA.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\DA.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 10444 records were written to the file 'E:\out\testIpsen\DAC_CSV\DA.csv'.
+      The minimum record length was 117.
+      The maximum record length was 172.
+NOTE: There were 10443 observations read from the data set INLIB.DA.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+10443 records created in E:\out\testIpsen\DAC_CSV\DA.csv from INLIB.DA.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\DA.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.04 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: Exporting INLIB.DM to E:\out\testIpsen\DAC_CSV\DM.csv
+
+631         /**********************************************************************
+632         *   PRODUCT:   SAS
+633         *   VERSION:   9.4
+634         *   CREATOR:   External File Interface
+635         *   DATE:      06JUL26
+636         *   DESC:      Generated SAS Datastep Code
+637         *   TEMPLATE SOURCE:  (None Specified.)
+638         ***********************************************************************/
+639            data _null_;
+17                                          The SAS System                  14:16 Monday, July 6, 2026
+
+640            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+641            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+642            file 'E:\out\testIpsen\DAC_CSV\DM.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+643            if _n_ = 1 then        /* write column names or labels */
+644             do;
+645               put
+646                  "STUDYID"
+647               ','
+648                  "DOMAIN"
+649               ','
+650                  "USUBJID"
+651               ','
+652                  "SUBJID"
+653               ','
+654                  "RFSTDTC"
+655               ','
+656                  "RFENDTC"
+657               ','
+658                  "RFXSTDTC"
+659               ','
+660                  "RFXENDTC"
+661               ','
+662                  "RFICDTC"
+663               ','
+664                  "RFPENDTC"
+665               ','
+666                  "DTHDTC"
+667               ','
+668                  "DTHFL"
+669               ','
+670                  "SITEID"
+671               ','
+672                  "BRTHDTC"
+673               ','
+674                  "AGE"
+675               ','
+676                  "AGEU"
+677               ','
+678                  "SEX"
+679               ','
+680                  "RACE"
+681               ','
+682                  "ETHNIC"
+683               ','
+684                  "ARMCD"
+685               ','
+686                  "ARM"
+687               ','
+688                  "ACTARMCD"
+689               ','
+690                  "ACTARM"
+691               ','
+692                  "COUNTRY"
+693               ','
+18                                          The SAS System                  14:16 Monday, July 6, 2026
+
+694                  "DMDTC"
+695               ','
+696                  "DMDY"
+697               ','
+698                  "AGEDI"
+699               ;
+700             end;
+701           set  INLIB.DM   end=EFIEOD;
+702               format STUDYID $12. ;
+703               format DOMAIN $2. ;
+704               format USUBJID $23. ;
+705               format SUBJID $9. ;
+706               format RFSTDTC $10. ;
+707               format RFENDTC $10. ;
+708               format RFXSTDTC $10. ;
+709               format RFXENDTC $10. ;
+710               format RFICDTC $10. ;
+711               format RFPENDTC $10. ;
+712               format DTHDTC $10. ;
+713               format DTHFL $1. ;
+714               format SITEID $6. ;
+715               format BRTHDTC $4. ;
+716               format AGE best12. ;
+717               format AGEU $5. ;
+718               format SEX $1. ;
+719               format RACE $41. ;
+720               format ETHNIC $22. ;
+721               format ARMCD $10. ;
+722               format ARM $20. ;
+723               format ACTARMCD $10. ;
+724               format ACTARM $20. ;
+725               format COUNTRY $3. ;
+726               format DMDTC $10. ;
+727               format DMDY best12. ;
+728               format AGEDI $4. ;
+729             do;
+730               EFIOUT + 1;
+731               put STUDYID $ @;
+732               put DOMAIN $ @;
+733               put USUBJID $ @;
+734               put SUBJID $ @;
+735               put RFSTDTC $ @;
+736               put RFENDTC $ @;
+737               put RFXSTDTC $ @;
+738               put RFXENDTC $ @;
+739               put RFICDTC $ @;
+740               put RFPENDTC $ @;
+741               put DTHDTC $ @;
+742               put DTHFL $ @;
+743               put SITEID $ @;
+744               put BRTHDTC $ @;
+745               put AGE @;
+746               put AGEU $ @;
+747               put SEX $ @;
+19                                          The SAS System                  14:16 Monday, July 6, 2026
+
+748               put RACE $ @;
+749               put ETHNIC $ @;
+750               put ARMCD $ @;
+751               put ARM $ @;
+752               put ACTARMCD $ @;
+753               put ACTARM $ @;
+754               put COUNTRY $ @;
+755               put DMDTC $ @;
+756               put DMDY @;
+757               put AGEDI $ ;
+758               ;
+759             end;
+760            if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+761            if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+762            run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\DM.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\DM.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 721 records were written to the file 'E:\out\testIpsen\DAC_CSV\DM.csv'.
+      The minimum record length was 156.
+      The maximum record length was 186.
+NOTE: There were 720 observations read from the data set INLIB.DM.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+720 records created in E:\out\testIpsen\DAC_CSV\DM.csv from INLIB.DM.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\DM.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.DS to E:\out\testIpsen\DAC_CSV\DS.csv
+
+763         /**********************************************************************
+764         *   PRODUCT:   SAS
+765         *   VERSION:   9.4
+766         *   CREATOR:   External File Interface
+767         *   DATE:      06JUL26
+768         *   DESC:      Generated SAS Datastep Code
+769         *   TEMPLATE SOURCE:  (None Specified.)
+20                                          The SAS System                  14:16 Monday, July 6, 2026
+
+770         ***********************************************************************/
+771            data _null_;
+772            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+773            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+774            file 'E:\out\testIpsen\DAC_CSV\DS.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+775            if _n_ = 1 then        /* write column names or labels */
+776             do;
+777               put
+778                  "STUDYID"
+779               ','
+780                  "DOMAIN"
+781               ','
+782                  "USUBJID"
+783               ','
+784                  "DSSEQ"
+785               ','
+786                  "DSTERM"
+787               ','
+788                  "DSDECOD"
+789               ','
+790                  "DSCAT"
+791               ','
+792                  "DSSCAT"
+793               ','
+794                  "EPOCH"
+795               ','
+796                  "DSSTDTC"
+797               ','
+798                  "DSSTDY"
+799               ;
+800             end;
+801           set  INLIB.DS   end=EFIEOD;
+802               format STUDYID $12. ;
+803               format DOMAIN $2. ;
+804               format USUBJID $23. ;
+805               format DSSEQ best12. ;
+806               format DSTERM $199. ;
+807               format DSDECOD $51. ;
+808               format DSCAT $18. ;
+809               format DSSCAT $22. ;
+810               format EPOCH $22. ;
+811               format DSSTDTC $10. ;
+812               format DSSTDY best12. ;
+813             do;
+814               EFIOUT + 1;
+815               put STUDYID $ @;
+816               put DOMAIN $ @;
+817               put USUBJID $ @;
+818               put DSSEQ @;
+819               put DSTERM $ @;
+820               put DSDECOD $ @;
+821               put DSCAT $ @;
+822               put DSSCAT $ @;
+823               put EPOCH $ @;
+21                                          The SAS System                  14:16 Monday, July 6, 2026
+
+824               put DSSTDTC $ @;
+825               put DSSTDY ;
+826               ;
+827             end;
+828            if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+829            if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+830            run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\DS.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\DS.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 3896 records were written to the file 'E:\out\testIpsen\DAC_CSV\DS.csv'.
+      The minimum record length was 77.
+      The maximum record length was 157.
+NOTE: There were 3895 observations read from the data set INLIB.DS.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+3895 records created in E:\out\testIpsen\DAC_CSV\DS.csv from INLIB.DS.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\DS.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.DV to E:\out\testIpsen\DAC_CSV\DV.csv
+
+831         /**********************************************************************
+832         *   PRODUCT:   SAS
+833         *   VERSION:   9.4
+834         *   CREATOR:   External File Interface
+835         *   DATE:      06JUL26
+836         *   DESC:      Generated SAS Datastep Code
+837         *   TEMPLATE SOURCE:  (None Specified.)
+838         ***********************************************************************/
+839            data _null_;
+840            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+841            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+842            file 'E:\out\testIpsen\DAC_CSV\DV.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+843            if _n_ = 1 then        /* write column names or labels */
+844             do;
+845               put
+22                                          The SAS System                  14:16 Monday, July 6, 2026
+
+846                  "STUDYID"
+847               ','
+848                  "DOMAIN"
+849               ','
+850                  "USUBJID"
+851               ','
+852                  "DVSEQ"
+853               ','
+854                  "DVTERM"
+855               ','
+856                  "DVDECOD"
+857               ','
+858                  "DVCAT"
+859               ','
+860                  "DVSCAT"
+861               ','
+862                  "VISITNUM"
+863               ','
+864                  "VISIT"
+865               ','
+866                  "VISITDY"
+867               ','
+868                  "EPOCH"
+869               ','
+870                  "DVSTDTC"
+871               ','
+872                  "DVSTDY"
+873               ;
+874             end;
+875           set  INLIB.DV   end=EFIEOD;
+876               format STUDYID $12. ;
+877               format DOMAIN $2. ;
+878               format USUBJID $23. ;
+879               format DVSEQ best12. ;
+880               format DVTERM $200. ;
+881               format DVDECOD $200. ;
+882               format DVCAT $25. ;
+883               format DVSCAT $39. ;
+884               format VISITNUM best12. ;
+885               format VISIT $23. ;
+886               format VISITDY best12. ;
+887               format EPOCH $22. ;
+888               format DVSTDTC $10. ;
+889               format DVSTDY best12. ;
+890             do;
+891               EFIOUT + 1;
+892               put STUDYID $ @;
+893               put DOMAIN $ @;
+894               put USUBJID $ @;
+895               put DVSEQ @;
+896               put DVTERM $ @;
+897               put DVDECOD $ @;
+898               put DVCAT $ @;
+899               put DVSCAT $ @;
+23                                          The SAS System                  14:16 Monday, July 6, 2026
+
+900               put VISITNUM @;
+901               put VISIT $ @;
+902               put VISITDY @;
+903               put EPOCH $ @;
+904               put DVSTDTC $ @;
+905               put DVSTDY ;
+906               ;
+907             end;
+908            if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+909            if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+910            run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\DV.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\DV.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 5422 records were written to the file 'E:\out\testIpsen\DAC_CSV\DV.csv'.
+      The minimum record length was 81.
+      The maximum record length was 367.
+NOTE: There were 5421 observations read from the data set INLIB.DV.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+5421 records created in E:\out\testIpsen\DAC_CSV\DV.csv from INLIB.DV.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\DV.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.04 seconds
+      cpu time            0.04 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.EC to E:\out\testIpsen\DAC_CSV\EC.csv
+
+911         /**********************************************************************
+912         *   PRODUCT:   SAS
+913         *   VERSION:   9.4
+914         *   CREATOR:   External File Interface
+915         *   DATE:      06JUL26
+916         *   DESC:      Generated SAS Datastep Code
+917         *   TEMPLATE SOURCE:  (None Specified.)
+918         ***********************************************************************/
+919            data _null_;
+920            %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+921            %let _EFIREC_ = 0;     /* clear export record count macro variable */
+24                                          The SAS System                  14:16 Monday, July 6, 2026
+
+922            file 'E:\out\testIpsen\DAC_CSV\EC.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+923            if _n_ = 1 then        /* write column names or labels */
+924             do;
+925               put
+926                  "STUDYID"
+927               ','
+928                  "DOMAIN"
+929               ','
+930                  "USUBJID"
+931               ','
+932                  "ECSEQ"
+933               ','
+934                  "ECTRT"
+935               ','
+936                  "ECMOOD"
+937               ','
+938                  "ECPRESP"
+939               ','
+940                  "ECOCCUR"
+941               ','
+942                  "ECDOSE"
+943               ','
+944                  "ECDOSU"
+945               ','
+946                  "ECDOSFRM"
+947               ','
+948                  "ECROUTE"
+949               ','
+950                  "ECADJ"
+951               ','
+952                  "VISITNUM"
+953               ','
+954                  "VISIT"
+955               ','
+956                  "VISITDY"
+957               ','
+958                  "EPOCH"
+959               ','
+960                  "ECSTDTC"
+961               ','
+962                  "ECENDTC"
+963               ','
+964                  "ECSTDY"
+965               ','
+966                  "ECENDY"
+967               ;
+968             end;
+969           set  INLIB.EC   end=EFIEOD;
+970               format STUDYID $12. ;
+971               format DOMAIN $2. ;
+972               format USUBJID $23. ;
+973               format ECSEQ best12. ;
+974               format ECTRT $20. ;
+975               format ECMOOD $9. ;
+25                                          The SAS System                  14:16 Monday, July 6, 2026
+
+976               format ECPRESP $1. ;
+977               format ECOCCUR $1. ;
+978               format ECDOSE best12. ;
+979               format ECDOSU $6. ;
+980               format ECDOSFRM $6. ;
+981               format ECROUTE $4. ;
+982               format ECADJ $199. ;
+983               format VISITNUM best12. ;
+984               format VISIT $16. ;
+985               format VISITDY best12. ;
+986               format EPOCH $9. ;
+987               format ECSTDTC $10. ;
+988               format ECENDTC $10. ;
+989               format ECSTDY best12. ;
+990               format ECENDY best12. ;
+991             do;
+992               EFIOUT + 1;
+993               put STUDYID $ @;
+994               put DOMAIN $ @;
+995               put USUBJID $ @;
+996               put ECSEQ @;
+997               put ECTRT $ @;
+998               put ECMOOD $ @;
+999               put ECPRESP $ @;
+1000              put ECOCCUR $ @;
+1001              put ECDOSE @;
+1002              put ECDOSU $ @;
+1003              put ECDOSFRM $ @;
+1004              put ECROUTE $ @;
+1005              put ECADJ $ @;
+1006              put VISITNUM @;
+1007              put VISIT $ @;
+1008              put VISITDY @;
+1009              put EPOCH $ @;
+1010              put ECSTDTC $ @;
+1011              put ECENDTC $ @;
+1012              put ECSTDY @;
+1013              put ECENDY ;
+1014              ;
+1015            end;
+1016           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1017           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1018           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\EC.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\EC.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 10789 records were written to the file 'E:\out\testIpsen\DAC_CSV\EC.csv'.
+      The minimum record length was 85.
+      The maximum record length was 153.
+NOTE: There were 10788 observations read from the data set INLIB.EC.
+26                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: DATA statement used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+10788 records created in E:\out\testIpsen\DAC_CSV\EC.csv from INLIB.EC.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\EC.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.04 seconds
+      cpu time            0.04 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.EG to E:\out\testIpsen\DAC_CSV\EG.csv
+
+1019        /**********************************************************************
+1020        *   PRODUCT:   SAS
+1021        *   VERSION:   9.4
+1022        *   CREATOR:   External File Interface
+1023        *   DATE:      06JUL26
+1024        *   DESC:      Generated SAS Datastep Code
+1025        *   TEMPLATE SOURCE:  (None Specified.)
+1026        ***********************************************************************/
+1027           data _null_;
+1028           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1029           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1030           file 'E:\out\testIpsen\DAC_CSV\EG.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1031           if _n_ = 1 then        /* write column names or labels */
+1032            do;
+1033              put
+1034                 "STUDYID"
+1035              ','
+1036                 "DOMAIN"
+1037              ','
+1038                 "USUBJID"
+1039              ','
+1040                 "EGSEQ"
+1041              ','
+1042                 "EGREFID"
+1043              ','
+1044                 "EGTESTCD"
+1045              ','
+1046                 "EGTEST"
+1047              ','
+1048                 "EGPOS"
+1049              ','
+1050                 "EGORRES"
+1051              ','
+27                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1052                 "EGSTRESC"
+1053              ','
+1054                 "EGSTAT"
+1055              ','
+1056                 "EGMETHOD"
+1057              ','
+1058                 "EGBLFL"
+1059              ','
+1060                 "EGEVAL"
+1061              ','
+1062                 "VISITNUM"
+1063              ','
+1064                 "VISIT"
+1065              ','
+1066                 "VISITDY"
+1067              ','
+1068                 "EPOCH"
+1069              ','
+1070                 "EGDTC"
+1071              ','
+1072                 "EGDY"
+1073              ;
+1074            end;
+1075          set  INLIB.EG   end=EFIEOD;
+1076              format STUDYID $12. ;
+1077              format DOMAIN $2. ;
+1078              format USUBJID $23. ;
+1079              format EGSEQ best12. ;
+1080              format EGREFID $83. ;
+1081              format EGTESTCD $4. ;
+1082              format EGTEST $14. ;
+1083              format EGPOS $6. ;
+1084              format EGORRES $8. ;
+1085              format EGSTRESC $8. ;
+1086              format EGSTAT $8. ;
+1087              format EGMETHOD $16. ;
+1088              format EGBLFL $1. ;
+1089              format EGEVAL $12. ;
+1090              format VISITNUM best12. ;
+1091              format VISIT $23. ;
+1092              format VISITDY best12. ;
+1093              format EPOCH $22. ;
+1094              format EGDTC $10. ;
+1095              format EGDY best12. ;
+1096            do;
+1097              EFIOUT + 1;
+1098              put STUDYID $ @;
+1099              put DOMAIN $ @;
+1100              put USUBJID $ @;
+1101              put EGSEQ @;
+1102              put EGREFID $ @;
+1103              put EGTESTCD $ @;
+1104              put EGTEST $ @;
+1105              put EGPOS $ @;
+28                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1106              put EGORRES $ @;
+1107              put EGSTRESC $ @;
+1108              put EGSTAT $ @;
+1109              put EGMETHOD $ @;
+1110              put EGBLFL $ @;
+1111              put EGEVAL $ @;
+1112              put VISITNUM @;
+1113              put VISIT $ @;
+1114              put VISITDY @;
+1115              put EPOCH $ @;
+1116              put EGDTC $ @;
+1117              put EGDY ;
+1118              ;
+1119            end;
+1120           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1121           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1122           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\EG.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\EG.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 2856 records were written to the file 'E:\out\testIpsen\DAC_CSV\EG.csv'.
+      The minimum record length was 122.
+      The maximum record length was 189.
+NOTE: There were 2855 observations read from the data set INLIB.EG.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+2855 records created in E:\out\testIpsen\DAC_CSV\EG.csv from INLIB.EG.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\EG.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.04 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.EX to E:\out\testIpsen\DAC_CSV\EX.csv
+
+1123        /**********************************************************************
+1124        *   PRODUCT:   SAS
+1125        *   VERSION:   9.4
+1126        *   CREATOR:   External File Interface
+1127        *   DATE:      06JUL26
+29                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1128        *   DESC:      Generated SAS Datastep Code
+1129        *   TEMPLATE SOURCE:  (None Specified.)
+1130        ***********************************************************************/
+1131           data _null_;
+1132           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1133           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1134           file 'E:\out\testIpsen\DAC_CSV\EX.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1135           if _n_ = 1 then        /* write column names or labels */
+1136            do;
+1137              put
+1138                 "STUDYID"
+1139              ','
+1140                 "DOMAIN"
+1141              ','
+1142                 "USUBJID"
+1143              ','
+1144                 "EXSEQ"
+1145              ','
+1146                 "EXTRT"
+1147              ','
+1148                 "EXDOSE"
+1149              ','
+1150                 "EXDOSU"
+1151              ','
+1152                 "EXDOSFRM"
+1153              ','
+1154                 "EXDOSFRQ"
+1155              ','
+1156                 "EXROUTE"
+1157              ','
+1158                 "EXADJ"
+1159              ','
+1160                 "EPOCH"
+1161              ','
+1162                 "EXSTDTC"
+1163              ','
+1164                 "EXENDTC"
+1165              ','
+1166                 "EXSTDY"
+1167              ','
+1168                 "EXENDY"
+1169              ;
+1170            end;
+1171          set  INLIB.EX   end=EFIEOD;
+1172              format STUDYID $12. ;
+1173              format DOMAIN $2. ;
+1174              format USUBJID $23. ;
+1175              format EXSEQ best12. ;
+1176              format EXTRT $20. ;
+1177              format EXDOSE best12. ;
+1178              format EXDOSU $2. ;
+1179              format EXDOSFRM $6. ;
+1180              format EXDOSFRQ $2. ;
+1181              format EXROUTE $4. ;
+30                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1182              format EXADJ $199. ;
+1183              format EPOCH $9. ;
+1184              format EXSTDTC $10. ;
+1185              format EXENDTC $10. ;
+1186              format EXSTDY best12. ;
+1187              format EXENDY best12. ;
+1188            do;
+1189              EFIOUT + 1;
+1190              put STUDYID $ @;
+1191              put DOMAIN $ @;
+1192              put USUBJID $ @;
+1193              put EXSEQ @;
+1194              put EXTRT $ @;
+1195              put EXDOSE @;
+1196              put EXDOSU $ @;
+1197              put EXDOSFRM $ @;
+1198              put EXDOSFRQ $ @;
+1199              put EXROUTE $ @;
+1200              put EXADJ $ @;
+1201              put EPOCH $ @;
+1202              put EXSTDTC $ @;
+1203              put EXENDTC $ @;
+1204              put EXSTDY @;
+1205              put EXENDY ;
+1206              ;
+1207            end;
+1208           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1209           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1210           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\EX.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\EX.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 5368 records were written to the file 'E:\out\testIpsen\DAC_CSV\EX.csv'.
+      The minimum record length was 97.
+      The maximum record length was 116.
+NOTE: There were 5367 observations read from the data set INLIB.EX.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+5367 records created in E:\out\testIpsen\DAC_CSV\EX.csv from INLIB.EX.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\EX.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+31                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.FA to E:\out\testIpsen\DAC_CSV\FA.csv
+
+1211        /**********************************************************************
+1212        *   PRODUCT:   SAS
+1213        *   VERSION:   9.4
+1214        *   CREATOR:   External File Interface
+1215        *   DATE:      06JUL26
+1216        *   DESC:      Generated SAS Datastep Code
+1217        *   TEMPLATE SOURCE:  (None Specified.)
+1218        ***********************************************************************/
+1219           data _null_;
+1220           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1221           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1222           file 'E:\out\testIpsen\DAC_CSV\FA.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1223           if _n_ = 1 then        /* write column names or labels */
+1224            do;
+1225              put
+1226                 "STUDYID"
+1227              ','
+1228                 "DOMAIN"
+1229              ','
+1230                 "USUBJID"
+1231              ','
+1232                 "FASEQ"
+1233              ','
+1234                 "FASPID"
+1235              ','
+1236                 "FATESTCD"
+1237              ','
+1238                 "FATEST"
+1239              ','
+1240                 "FAOBJ"
+1241              ','
+1242                 "FAORRES"
+1243              ','
+1244                 "FASTRESC"
+1245              ;
+1246            end;
+1247          set  INLIB.FA   end=EFIEOD;
+1248              format STUDYID $12. ;
+1249              format DOMAIN $2. ;
+1250              format USUBJID $23. ;
+1251              format FASEQ best12. ;
+1252              format FASPID $5. ;
+1253              format FATESTCD $8. ;
+1254              format FATEST $27. ;
+1255              format FAOBJ $40. ;
+1256              format FAORRES $10. ;
+1257              format FASTRESC $10. ;
+32                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1258            do;
+1259              EFIOUT + 1;
+1260              put STUDYID $ @;
+1261              put DOMAIN $ @;
+1262              put USUBJID $ @;
+1263              put FASEQ @;
+1264              put FASPID $ @;
+1265              put FATESTCD $ @;
+1266              put FATEST $ @;
+1267              put FAOBJ $ @;
+1268              put FAORRES $ @;
+1269              put FASTRESC $ ;
+1270              ;
+1271            end;
+1272           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1273           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1274           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\FA.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\FA.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 374 records were written to the file 'E:\out\testIpsen\DAC_CSV\FA.csv'.
+      The minimum record length was 74.
+      The maximum record length was 123.
+NOTE: There were 373 observations read from the data set INLIB.FA.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+373 records created in E:\out\testIpsen\DAC_CSV\FA.csv from INLIB.FA.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\FA.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.HO to E:\out\testIpsen\DAC_CSV\HO.csv
+
+NOTE: No variables in data set INLIB.HO.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+33                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      cpu time            0.01 seconds
+      
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.IE to E:\out\testIpsen\DAC_CSV\IE.csv
+
+1275        /**********************************************************************
+1276        *   PRODUCT:   SAS
+1277        *   VERSION:   9.4
+1278        *   CREATOR:   External File Interface
+1279        *   DATE:      06JUL26
+1280        *   DESC:      Generated SAS Datastep Code
+1281        *   TEMPLATE SOURCE:  (None Specified.)
+1282        ***********************************************************************/
+1283           data _null_;
+1284           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1285           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1286           file 'E:\out\testIpsen\DAC_CSV\IE.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1287           if _n_ = 1 then        /* write column names or labels */
+1288            do;
+1289              put
+1290                 "STUDYID"
+1291              ','
+1292                 "DOMAIN"
+1293              ','
+1294                 "USUBJID"
+1295              ','
+1296                 "IESEQ"
+1297              ','
+1298                 "IETESTCD"
+1299              ','
+1300                 "IETEST"
+1301              ','
+1302                 "IECAT"
+1303              ','
+1304                 "IEORRES"
+1305              ','
+1306                 "IESTRESC"
+1307              ','
+1308                 "VISITNUM"
+1309              ','
+1310                 "VISIT"
+1311              ','
+1312                 "VISITDY"
+1313              ','
+1314                 "EPOCH"
+1315              ;
+1316            end;
+1317          set  INLIB.IE   end=EFIEOD;
+34                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1318              format STUDYID $12. ;
+1319              format DOMAIN $2. ;
+1320              format USUBJID $23. ;
+1321              format IESEQ best12. ;
+1322              format IETESTCD $6. ;
+1323              format IETEST $199. ;
+1324              format IECAT $9. ;
+1325              format IEORRES $1. ;
+1326              format IESTRESC $1. ;
+1327              format VISITNUM best12. ;
+1328              format VISIT $17. ;
+1329              format VISITDY best12. ;
+1330              format EPOCH $9. ;
+1331            do;
+1332              EFIOUT + 1;
+1333              put STUDYID $ @;
+1334              put DOMAIN $ @;
+1335              put USUBJID $ @;
+1336              put IESEQ @;
+1337              put IETESTCD $ @;
+1338              put IETEST $ @;
+1339              put IECAT $ @;
+1340              put IEORRES $ @;
+1341              put IESTRESC $ @;
+1342              put VISITNUM @;
+1343              put VISIT $ @;
+1344              put VISITDY @;
+1345              put EPOCH $ ;
+1346              ;
+1347            end;
+1348           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1349           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1350           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\IE.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\IE.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 22 records were written to the file 'E:\out\testIpsen\DAC_CSV\IE.csv'.
+      The minimum record length was 96.
+      The maximum record length was 297.
+NOTE: There were 21 observations read from the data set INLIB.IE.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+21 records created in E:\out\testIpsen\DAC_CSV\IE.csv from INLIB.IE.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\IE.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+35                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.LB to E:\out\testIpsen\DAC_CSV\LB.csv
+
+1351        /**********************************************************************
+1352        *   PRODUCT:   SAS
+1353        *   VERSION:   9.4
+1354        *   CREATOR:   External File Interface
+1355        *   DATE:      06JUL26
+1356        *   DESC:      Generated SAS Datastep Code
+1357        *   TEMPLATE SOURCE:  (None Specified.)
+1358        ***********************************************************************/
+1359           data _null_;
+1360           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1361           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1362           file 'E:\out\testIpsen\DAC_CSV\LB.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1363           if _n_ = 1 then        /* write column names or labels */
+1364            do;
+1365              put
+1366                 "STUDYID"
+1367              ','
+1368                 "DOMAIN"
+1369              ','
+1370                 "USUBJID"
+1371              ','
+1372                 "LBSEQ"
+1373              ','
+1374                 "LBREFID"
+1375              ','
+1376                 "LBTESTCD"
+1377              ','
+1378                 "LBTEST"
+1379              ','
+1380                 "LBCAT"
+1381              ','
+1382                 "LBSCAT"
+1383              ','
+1384                 "LBORRES"
+1385              ','
+1386                 "LBORRESU"
+1387              ','
+1388                 "LBORNRLO"
+1389              ','
+1390                 "LBORNRHI"
+1391              ','
+1392                 "LBSTRESC"
+1393              ','
+36                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1394                 "LBSTRESN"
+1395              ','
+1396                 "LBSTRESU"
+1397              ','
+1398                 "LBSTNRLO"
+1399              ','
+1400                 "LBSTNRHI"
+1401              ','
+1402                 "LBSTNRC"
+1403              ','
+1404                 "LBNRIND"
+1405              ','
+1406                 "LBSTAT"
+1407              ','
+1408                 "LBREASND"
+1409              ','
+1410                 "LBNAM"
+1411              ','
+1412                 "LBBLFL"
+1413              ','
+1414                 "LBFAST"
+1415              ','
+1416                 "VISITNUM"
+1417              ','
+1418                 "VISIT"
+1419              ','
+1420                 "VISITDY"
+1421              ','
+1422                 "EPOCH"
+1423              ','
+1424                 "LBDTC"
+1425              ','
+1426                 "LBDY"
+1427              ;
+1428            end;
+1429          set  INLIB.LB   end=EFIEOD;
+1430              format STUDYID $12. ;
+1431              format DOMAIN $2. ;
+1432              format USUBJID $23. ;
+1433              format LBSEQ best12. ;
+1434              format LBREFID $8. ;
+1435              format LBTESTCD $8. ;
+1436              format LBTEST $47. ;
+1437              format LBCAT $30. ;
+1438              format LBSCAT $15. ;
+1439              format LBORRES $48. ;
+1440              format LBORRESU $13. ;
+1441              format LBORNRLO $5. ;
+1442              format LBORNRHI $6. ;
+1443              format LBSTRESC $48. ;
+1444              format LBSTRESN best12. ;
+1445              format LBSTRESU $13. ;
+1446              format LBSTNRLO best12. ;
+1447              format LBSTNRHI best12. ;
+37                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1448              format LBSTNRC $12. ;
+1449              format LBNRIND $6. ;
+1450              format LBSTAT $8. ;
+1451              format LBREASND $200. ;
+1452              format LBNAM $8. ;
+1453              format LBBLFL $1. ;
+1454              format LBFAST $1. ;
+1455              format VISITNUM best12. ;
+1456              format VISIT $23. ;
+1457              format VISITDY best12. ;
+1458              format EPOCH $22. ;
+1459              format LBDTC $10. ;
+1460              format LBDY best12. ;
+1461            do;
+1462              EFIOUT + 1;
+1463              put STUDYID $ @;
+1464              put DOMAIN $ @;
+1465              put USUBJID $ @;
+1466              put LBSEQ @;
+1467              put LBREFID $ @;
+1468              put LBTESTCD $ @;
+1469              put LBTEST $ @;
+1470              put LBCAT $ @;
+1471              put LBSCAT $ @;
+1472              put LBORRES $ @;
+1473              put LBORRESU $ @;
+1474              put LBORNRLO $ @;
+1475              put LBORNRHI $ @;
+1476              put LBSTRESC $ @;
+1477              put LBSTRESN @;
+1478              put LBSTRESU $ @;
+1479              put LBSTNRLO @;
+1480              put LBSTNRHI @;
+1481              put LBSTNRC $ @;
+1482              put LBNRIND $ @;
+1483              put LBSTAT $ @;
+1484              put LBREASND $ @;
+1485              put LBNAM $ @;
+1486              put LBBLFL $ @;
+1487              put LBFAST $ @;
+1488              put VISITNUM @;
+1489              put VISIT $ @;
+1490              put VISITDY @;
+1491              put EPOCH $ @;
+1492              put LBDTC $ @;
+1493              put LBDY ;
+1494              ;
+1495            end;
+1496           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1497           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1498           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\LB.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\LB.csv,
+38                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:13,
+      Create Time=06Jul2026:14:16:13
+
+NOTE: 658431 records were written to the file 'E:\out\testIpsen\DAC_CSV\LB.csv'.
+      The minimum record length was 116.
+      The maximum record length was 259.
+NOTE: There were 658430 observations read from the data set INLIB.LB.
+NOTE: DATA statement used (Total process time):
+      real time           1.79 seconds
+      cpu time            1.78 seconds
+      
+
+658430 records created in E:\out\testIpsen\DAC_CSV\LB.csv from INLIB.LB.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\LB.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           1.82 seconds
+      cpu time            1.81 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.MH to E:\out\testIpsen\DAC_CSV\MH.csv
+
+1499        /**********************************************************************
+1500        *   PRODUCT:   SAS
+1501        *   VERSION:   9.4
+1502        *   CREATOR:   External File Interface
+1503        *   DATE:      06JUL26
+1504        *   DESC:      Generated SAS Datastep Code
+1505        *   TEMPLATE SOURCE:  (None Specified.)
+1506        ***********************************************************************/
+1507           data _null_;
+1508           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1509           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1510           file 'E:\out\testIpsen\DAC_CSV\MH.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1511           if _n_ = 1 then        /* write column names or labels */
+1512            do;
+1513              put
+1514                 "STUDYID"
+1515              ','
+1516                 "DOMAIN"
+1517              ','
+1518                 "USUBJID"
+1519              ','
+1520                 "MHSEQ"
+1521              ','
+1522                 "MHSPID"
+1523              ','
+39                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1524                 "MHTERM"
+1525              ','
+1526                 "MHLLT"
+1527              ','
+1528                 "MHLLTCD"
+1529              ','
+1530                 "MHDECOD"
+1531              ','
+1532                 "MHPTCD"
+1533              ','
+1534                 "MHHLT"
+1535              ','
+1536                 "MHHLTCD"
+1537              ','
+1538                 "MHHLGT"
+1539              ','
+1540                 "MHHLGTCD"
+1541              ','
+1542                 "MHCAT"
+1543              ','
+1544                 "MHBODSYS"
+1545              ','
+1546                 "MHBDSYCD"
+1547              ','
+1548                 "MHSOC"
+1549              ','
+1550                 "MHSOCCD"
+1551              ','
+1552                 "MHSTDTC"
+1553              ','
+1554                 "MHENDTC"
+1555              ','
+1556                 "MHSTDY"
+1557              ','
+1558                 "MHENDY"
+1559              ','
+1560                 "MHENRTPT"
+1561              ','
+1562                 "MHENTPT"
+1563              ;
+1564            end;
+1565          set  INLIB.MH   end=EFIEOD;
+1566              format STUDYID $12. ;
+1567              format DOMAIN $2. ;
+1568              format USUBJID $23. ;
+1569              format MHSEQ best12. ;
+1570              format MHSPID $2. ;
+1571              format MHTERM $190. ;
+1572              format MHLLT $74. ;
+1573              format MHLLTCD best12. ;
+1574              format MHDECOD $58. ;
+1575              format MHPTCD best12. ;
+1576              format MHHLT $82. ;
+1577              format MHHLTCD best12. ;
+40                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1578              format MHHLGT $86. ;
+1579              format MHHLGTCD best12. ;
+1580              format MHCAT $23. ;
+1581              format MHBODSYS $67. ;
+1582              format MHBDSYCD best12. ;
+1583              format MHSOC $67. ;
+1584              format MHSOCCD best12. ;
+1585              format MHSTDTC $10. ;
+1586              format MHENDTC $10. ;
+1587              format MHSTDY best12. ;
+1588              format MHENDY best12. ;
+1589              format MHENRTPT $5. ;
+1590              format MHENTPT $9. ;
+1591            do;
+1592              EFIOUT + 1;
+1593              put STUDYID $ @;
+1594              put DOMAIN $ @;
+1595              put USUBJID $ @;
+1596              put MHSEQ @;
+1597              put MHSPID $ @;
+1598              put MHTERM $ @;
+1599              put MHLLT $ @;
+1600              put MHLLTCD @;
+1601              put MHDECOD $ @;
+1602              put MHPTCD @;
+1603              put MHHLT $ @;
+1604              put MHHLTCD @;
+1605              put MHHLGT $ @;
+1606              put MHHLGTCD @;
+1607              put MHCAT $ @;
+1608              put MHBODSYS $ @;
+1609              put MHBDSYCD @;
+1610              put MHSOC $ @;
+1611              put MHSOCCD @;
+1612              put MHSTDTC $ @;
+1613              put MHENDTC $ @;
+1614              put MHSTDY @;
+1615              put MHENDY @;
+1616              put MHENRTPT $ @;
+1617              put MHENTPT $ ;
+1618              ;
+1619            end;
+1620           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1621           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1622           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\MH.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\MH.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:15,
+      Create Time=06Jul2026:14:16:15
+
+NOTE: 10272 records were written to the file 'E:\out\testIpsen\DAC_CSV\MH.csv'.
+      The minimum record length was 186.
+41                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      The maximum record length was 420.
+NOTE: There were 10271 observations read from the data set INLIB.MH.
+NOTE: DATA statement used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+10271 records created in E:\out\testIpsen\DAC_CSV\MH.csv from INLIB.MH.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\MH.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.05 seconds
+      cpu time            0.06 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.MI to E:\out\testIpsen\DAC_CSV\MI.csv
+
+1623        /**********************************************************************
+1624        *   PRODUCT:   SAS
+1625        *   VERSION:   9.4
+1626        *   CREATOR:   External File Interface
+1627        *   DATE:      06JUL26
+1628        *   DESC:      Generated SAS Datastep Code
+1629        *   TEMPLATE SOURCE:  (None Specified.)
+1630        ***********************************************************************/
+1631           data _null_;
+1632           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1633           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1634           file 'E:\out\testIpsen\DAC_CSV\MI.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1635           if _n_ = 1 then        /* write column names or labels */
+1636            do;
+1637              put
+1638                 "STUDYID"
+1639              ','
+1640                 "DOMAIN"
+1641              ','
+1642                 "USUBJID"
+1643              ','
+1644                 "MISEQ"
+1645              ','
+1646                 "MIGRPID"
+1647              ','
+1648                 "MIREFID"
+1649              ','
+1650                 "MITESTCD"
+1651              ','
+1652                 "MITEST"
+1653              ','
+42                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1654                 "MICAT"
+1655              ','
+1656                 "MIORRES"
+1657              ','
+1658                 "MIORRESU"
+1659              ','
+1660                 "MISTRESC"
+1661              ','
+1662                 "MISTRESN"
+1663              ','
+1664                 "MISTRESU"
+1665              ','
+1666                 "MISTAT"
+1667              ','
+1668                 "MIREASND"
+1669              ','
+1670                 "MISPEC"
+1671              ','
+1672                 "MIBLFL"
+1673              ','
+1674                 "VISITNUM"
+1675              ','
+1676                 "VISIT"
+1677              ','
+1678                 "VISITDY"
+1679              ','
+1680                 "MIDTC"
+1681              ','
+1682                 "MIDY"
+1683              ;
+1684            end;
+1685          set  INLIB.MI   end=EFIEOD;
+1686              format STUDYID $12. ;
+1687              format DOMAIN $2. ;
+1688              format USUBJID $23. ;
+1689              format MISEQ best12. ;
+1690              format MIGRPID $8. ;
+1691              format MIREFID $11. ;
+1692              format MITESTCD $8. ;
+1693              format MITEST $32. ;
+1694              format MICAT $23. ;
+1695              format MIORRES $11. ;
+1696              format MIORRESU $2. ;
+1697              format MISTRESC $11. ;
+1698              format MISTRESN best12. ;
+1699              format MISTRESU $2. ;
+1700              format MISTAT $8. ;
+1701              format MIREASND $200. ;
+1702              format MISPEC $6. ;
+1703              format MIBLFL $1. ;
+1704              format VISITNUM best12. ;
+1705              format VISIT $23. ;
+1706              format VISITDY best12. ;
+1707              format MIDTC $10. ;
+43                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1708              format MIDY best12. ;
+1709            do;
+1710              EFIOUT + 1;
+1711              put STUDYID $ @;
+1712              put DOMAIN $ @;
+1713              put USUBJID $ @;
+1714              put MISEQ @;
+1715              put MIGRPID $ @;
+1716              put MIREFID $ @;
+1717              put MITESTCD $ @;
+1718              put MITEST $ @;
+1719              put MICAT $ @;
+1720              put MIORRES $ @;
+1721              put MIORRESU $ @;
+1722              put MISTRESC $ @;
+1723              put MISTRESN @;
+1724              put MISTRESU $ @;
+1725              put MISTAT $ @;
+1726              put MIREASND $ @;
+1727              put MISPEC $ @;
+1728              put MIBLFL $ @;
+1729              put VISITNUM @;
+1730              put VISIT $ @;
+1731              put VISITDY @;
+1732              put MIDTC $ @;
+1733              put MIDY ;
+1734              ;
+1735            end;
+1736           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1737           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1738           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\MI.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\MI.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:15,
+      Create Time=06Jul2026:14:16:15
+
+NOTE: 23749 records were written to the file 'E:\out\testIpsen\DAC_CSV\MI.csv'.
+      The minimum record length was 118.
+      The maximum record length was 199.
+NOTE: There were 23748 observations read from the data set INLIB.MI.
+NOTE: DATA statement used (Total process time):
+      real time           0.04 seconds
+      cpu time            0.03 seconds
+      
+
+23748 records created in E:\out\testIpsen\DAC_CSV\MI.csv from INLIB.MI.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\MI.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.07 seconds
+      cpu time            0.07 seconds
+44                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.ML to E:\out\testIpsen\DAC_CSV\ML.csv
+
+NOTE: No variables in data set INLIB.ML.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.04 seconds
+      
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.MO to E:\out\testIpsen\DAC_CSV\MO.csv
+
+1739        /**********************************************************************
+1740        *   PRODUCT:   SAS
+1741        *   VERSION:   9.4
+1742        *   CREATOR:   External File Interface
+1743        *   DATE:      06JUL26
+1744        *   DESC:      Generated SAS Datastep Code
+1745        *   TEMPLATE SOURCE:  (None Specified.)
+1746        ***********************************************************************/
+1747           data _null_;
+1748           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1749           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1750           file 'E:\out\testIpsen\DAC_CSV\MO.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1751           if _n_ = 1 then        /* write column names or labels */
+1752            do;
+1753              put
+1754                 "STUDYID"
+1755              ','
+1756                 "DOMAIN"
+1757              ','
+1758                 "USUBJID"
+1759              ','
+1760                 "MOSEQ"
+1761              ','
+1762                 "MOTESTCD"
+1763              ','
+1764                 "MOTEST"
+1765              ','
+1766                 "MOORRES"
+1767              ','
+45                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1768                 "MOORRESU"
+1769              ','
+1770                 "MOSTRESC"
+1771              ','
+1772                 "MOSTRESN"
+1773              ','
+1774                 "MOSTRESU"
+1775              ','
+1776                 "MOSTAT"
+1777              ','
+1778                 "VISITNUM"
+1779              ','
+1780                 "VISIT"
+1781              ','
+1782                 "VISITDY"
+1783              ','
+1784                 "MODTC"
+1785              ','
+1786                 "MODY"
+1787              ;
+1788            end;
+1789          set  INLIB.MO   end=EFIEOD;
+1790              format STUDYID $12. ;
+1791              format DOMAIN $2. ;
+1792              format USUBJID $23. ;
+1793              format MOSEQ best12. ;
+1794              format MOTESTCD $7. ;
+1795              format MOTEST $34. ;
+1796              format MOORRES $4. ;
+1797              format MOORRESU $3. ;
+1798              format MOSTRESC $4. ;
+1799              format MOSTRESN best12. ;
+1800              format MOSTRESU $3. ;
+1801              format MOSTAT $8. ;
+1802              format VISITNUM best12. ;
+1803              format VISIT $23. ;
+1804              format VISITDY best12. ;
+1805              format MODTC $10. ;
+1806              format MODY best12. ;
+1807            do;
+1808              EFIOUT + 1;
+1809              put STUDYID $ @;
+1810              put DOMAIN $ @;
+1811              put USUBJID $ @;
+1812              put MOSEQ @;
+1813              put MOTESTCD $ @;
+1814              put MOTEST $ @;
+1815              put MOORRES $ @;
+1816              put MOORRESU $ @;
+1817              put MOSTRESC $ @;
+1818              put MOSTRESN @;
+1819              put MOSTRESU $ @;
+1820              put MOSTAT $ @;
+1821              put VISITNUM @;
+46                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1822              put VISIT $ @;
+1823              put VISITDY @;
+1824              put MODTC $ @;
+1825              put MODY ;
+1826              ;
+1827            end;
+1828           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1829           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1830           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\MO.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\MO.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:15,
+      Create Time=06Jul2026:14:16:15
+
+NOTE: 11892 records were written to the file 'E:\out\testIpsen\DAC_CSV\MO.csv'.
+      The minimum record length was 87.
+      The maximum record length was 150.
+NOTE: There were 11891 observations read from the data set INLIB.MO.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+11891 records created in E:\out\testIpsen\DAC_CSV\MO.csv from INLIB.MO.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\MO.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.04 seconds
+      cpu time            0.04 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.PC to E:\out\testIpsen\DAC_CSV\PC.csv
+
+NOTE: No observations in data set INLIB.PC.
+NOTE: Data set has 0 observations.
+1831        /**********************************************************************
+1832        *   PRODUCT:   SAS
+1833        *   VERSION:   9.4
+1834        *   CREATOR:   External File Interface
+1835        *   DATE:      06JUL26
+1836        *   DESC:      Generated SAS Datastep Code
+1837        *   TEMPLATE SOURCE:  (None Specified.)
+1838        ***********************************************************************/
+1839           data _null_;
+1840           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1841           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+47                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1842           file 'E:\out\testIpsen\DAC_CSV\PC.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1843           if _n_ = 1 then        /* write column names or labels */
+1844            do;
+1845              put
+1846                 "STUDYID"
+1847              ','
+1848                 "DOMAIN"
+1849              ','
+1850                 "USUBJID"
+1851              ','
+1852                 "PCSEQ"
+1853              ','
+1854                 "PCTESTCD"
+1855              ','
+1856                 "PCTEST"
+1857              ','
+1858                 "PCORRES"
+1859              ','
+1860                 "PCORRESU"
+1861              ','
+1862                 "PCSTRESC"
+1863              ','
+1864                 "PCSTRESN"
+1865              ','
+1866                 "PCSTRESU"
+1867              ','
+1868                 "PCNAM"
+1869              ','
+1870                 "PCSPEC"
+1871              ','
+1872                 "PCMETHOD"
+1873              ','
+1874                 "PCLLOQ"
+1875              ','
+1876                 "VISITNUM"
+1877              ','
+1878                 "VISIT"
+1879              ','
+1880                 "VISITDY"
+1881              ','
+1882                 "EPOCH"
+1883              ','
+1884                 "PCDTC"
+1885              ','
+1886                 "PCDY"
+1887              ','
+1888                 "PCTPT"
+1889              ','
+1890                 "PCTPTNUM"
+1891              ','
+1892                 "PCELTM"
+1893              ','
+1894                 "PCTPTREF"
+1895              ','
+48                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1896                 "PCRFTDTC"
+1897              ;
+1898            end;
+1899          set  INLIB.PC   end=EFIEOD;
+1900              format STUDYID $12. ;
+1901              format DOMAIN $2. ;
+1902              format USUBJID $23. ;
+1903              format PCSEQ best12. ;
+1904              format PCTESTCD $7. ;
+1905              format PCTEST $7. ;
+1906              format PCORRES $6. ;
+1907              format PCORRESU $5. ;
+1908              format PCSTRESC $6. ;
+1909              format PCSTRESN best12. ;
+1910              format PCSTRESU $5. ;
+1911              format PCNAM $25. ;
+1912              format PCSPEC $6. ;
+1913              format PCMETHOD $8. ;
+1914              format PCLLOQ best12. ;
+1915              format VISITNUM best12. ;
+1916              format VISIT $7. ;
+1917              format VISITDY best12. ;
+1918              format EPOCH $9. ;
+1919              format PCDTC $16. ;
+1920              format PCDY best12. ;
+1921              format PCTPT $18. ;
+1922              format PCTPTNUM best12. ;
+1923              format PCELTM $5. ;
+1924              format PCTPTREF $22. ;
+1925              format PCRFTDTC $16. ;
+1926            do;
+1927              EFIOUT + 1;
+1928              put STUDYID $ @;
+1929              put DOMAIN $ @;
+1930              put USUBJID $ @;
+1931              put PCSEQ @;
+1932              put PCTESTCD $ @;
+1933              put PCTEST $ @;
+1934              put PCORRES $ @;
+1935              put PCORRESU $ @;
+1936              put PCSTRESC $ @;
+1937              put PCSTRESN @;
+1938              put PCSTRESU $ @;
+1939              put PCNAM $ @;
+1940              put PCSPEC $ @;
+1941              put PCMETHOD $ @;
+1942              put PCLLOQ @;
+1943              put VISITNUM @;
+1944              put VISIT $ @;
+1945              put VISITDY @;
+1946              put EPOCH $ @;
+1947              put PCDTC $ @;
+1948              put PCDY @;
+1949              put PCTPT $ @;
+49                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1950              put PCTPTNUM @;
+1951              put PCELTM $ @;
+1952              put PCTPTREF $ @;
+1953              put PCRFTDTC $ ;
+1954              ;
+1955            end;
+1956           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+1957           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+1958           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\PC.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\PC.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:15,
+      Create Time=06Jul2026:14:16:15
+
+NOTE: 1 record was written to the file 'E:\out\testIpsen\DAC_CSV\PC.csv'.
+      The minimum record length was 197.
+      The maximum record length was 197.
+NOTE: There were 0 observations read from the data set INLIB.PC.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+0 records created in E:\out\testIpsen\DAC_CSV\PC.csv from INLIB.PC.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\PC.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.04 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.PE to E:\out\testIpsen\DAC_CSV\PE.csv
+
+1959        /**********************************************************************
+1960        *   PRODUCT:   SAS
+1961        *   VERSION:   9.4
+1962        *   CREATOR:   External File Interface
+1963        *   DATE:      06JUL26
+1964        *   DESC:      Generated SAS Datastep Code
+1965        *   TEMPLATE SOURCE:  (None Specified.)
+1966        ***********************************************************************/
+1967           data _null_;
+1968           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+1969           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+1970           file 'E:\out\testIpsen\DAC_CSV\PE.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+1971           if _n_ = 1 then        /* write column names or labels */
+50                                          The SAS System                  14:16 Monday, July 6, 2026
+
+1972            do;
+1973              put
+1974                 "STUDYID"
+1975              ','
+1976                 "DOMAIN"
+1977              ','
+1978                 "USUBJID"
+1979              ','
+1980                 "PESEQ"
+1981              ','
+1982                 "PETESTCD"
+1983              ','
+1984                 "PETEST"
+1985              ','
+1986                 "PEORRES"
+1987              ','
+1988                 "PESTRESC"
+1989              ','
+1990                 "PESTAT"
+1991              ','
+1992                 "VISITNUM"
+1993              ','
+1994                 "VISIT"
+1995              ','
+1996                 "VISITDY"
+1997              ','
+1998                 "EPOCH"
+1999              ','
+2000                 "PEDTC"
+2001              ','
+2002                 "PEDY"
+2003              ;
+2004            end;
+2005          set  INLIB.PE   end=EFIEOD;
+2006              format STUDYID $12. ;
+2007              format DOMAIN $2. ;
+2008              format USUBJID $23. ;
+2009              format PESEQ best12. ;
+2010              format PETESTCD $7. ;
+2011              format PETEST $40. ;
+2012              format PEORRES $8. ;
+2013              format PESTRESC $8. ;
+2014              format PESTAT $8. ;
+2015              format VISITNUM best12. ;
+2016              format VISIT $23. ;
+2017              format VISITDY best12. ;
+2018              format EPOCH $22. ;
+2019              format PEDTC $10. ;
+2020              format PEDY best12. ;
+2021            do;
+2022              EFIOUT + 1;
+2023              put STUDYID $ @;
+2024              put DOMAIN $ @;
+2025              put USUBJID $ @;
+51                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2026              put PESEQ @;
+2027              put PETESTCD $ @;
+2028              put PETEST $ @;
+2029              put PEORRES $ @;
+2030              put PESTRESC $ @;
+2031              put PESTAT $ @;
+2032              put VISITNUM @;
+2033              put VISIT $ @;
+2034              put VISITDY @;
+2035              put EPOCH $ @;
+2036              put PEDTC $ @;
+2037              put PEDY ;
+2038              ;
+2039            end;
+2040           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2041           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2042           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\PE.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\PE.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 6872 records were written to the file 'E:\out\testIpsen\DAC_CSV\PE.csv'.
+      The minimum record length was 97.
+      The maximum record length was 164.
+NOTE: There were 6871 observations read from the data set INLIB.PE.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+6871 records created in E:\out\testIpsen\DAC_CSV\PE.csv from INLIB.PE.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\PE.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.PR to E:\out\testIpsen\DAC_CSV\PR.csv
+
+2043        /**********************************************************************
+2044        *   PRODUCT:   SAS
+2045        *   VERSION:   9.4
+2046        *   CREATOR:   External File Interface
+2047        *   DATE:      06JUL26
+52                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2048        *   DESC:      Generated SAS Datastep Code
+2049        *   TEMPLATE SOURCE:  (None Specified.)
+2050        ***********************************************************************/
+2051           data _null_;
+2052           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2053           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2054           file 'E:\out\testIpsen\DAC_CSV\PR.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2055           if _n_ = 1 then        /* write column names or labels */
+2056            do;
+2057              put
+2058                 "STUDYID"
+2059              ','
+2060                 "DOMAIN"
+2061              ','
+2062                 "USUBJID"
+2063              ','
+2064                 "PRSEQ"
+2065              ','
+2066                 "PRTRT"
+2067              ','
+2068                 "PRDECOD"
+2069              ','
+2070                 "PRCAT"
+2071              ','
+2072                 "PRPRESP"
+2073              ','
+2074                 "PROCCUR"
+2075              ','
+2076                 "VISITNUM"
+2077              ','
+2078                 "VISIT"
+2079              ','
+2080                 "VISITDY"
+2081              ','
+2082                 "PRSTDTC"
+2083              ','
+2084                 "PRSTDY"
+2085              ;
+2086            end;
+2087          set  INLIB.PR   end=EFIEOD;
+2088              format STUDYID $12. ;
+2089              format DOMAIN $2. ;
+2090              format USUBJID $23. ;
+2091              format PRSEQ best12. ;
+2092              format PRTRT $156. ;
+2093              format PRDECOD $48. ;
+2094              format PRCAT $22. ;
+2095              format PRPRESP $1. ;
+2096              format PROCCUR $1. ;
+2097              format VISITNUM best12. ;
+2098              format VISIT $23. ;
+2099              format VISITDY best12. ;
+2100              format PRSTDTC $10. ;
+2101              format PRSTDY best12. ;
+53                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2102            do;
+2103              EFIOUT + 1;
+2104              put STUDYID $ @;
+2105              put DOMAIN $ @;
+2106              put USUBJID $ @;
+2107              put PRSEQ @;
+2108              put PRTRT $ @;
+2109              put PRDECOD $ @;
+2110              put PRCAT $ @;
+2111              put PRPRESP $ @;
+2112              put PROCCUR $ @;
+2113              put VISITNUM @;
+2114              put VISIT $ @;
+2115              put VISITDY @;
+2116              put PRSTDTC $ @;
+2117              put PRSTDY ;
+2118              ;
+2119            end;
+2120           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2121           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2122           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\PR.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\PR.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 4489 records were written to the file 'E:\out\testIpsen\DAC_CSV\PR.csv'.
+      The minimum record length was 85.
+      The maximum record length was 158.
+NOTE: There were 4488 observations read from the data set INLIB.PR.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+4488 records created in E:\out\testIpsen\DAC_CSV\PR.csv from INLIB.PR.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\PR.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.QS to E:\out\testIpsen\DAC_CSV\QS.csv
+
+2123        /**********************************************************************
+54                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2124        *   PRODUCT:   SAS
+2125        *   VERSION:   9.4
+2126        *   CREATOR:   External File Interface
+2127        *   DATE:      06JUL26
+2128        *   DESC:      Generated SAS Datastep Code
+2129        *   TEMPLATE SOURCE:  (None Specified.)
+2130        ***********************************************************************/
+2131           data _null_;
+2132           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2133           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2134           file 'E:\out\testIpsen\DAC_CSV\QS.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2135           if _n_ = 1 then        /* write column names or labels */
+2136            do;
+2137              put
+2138                 "STUDYID"
+2139              ','
+2140                 "DOMAIN"
+2141              ','
+2142                 "USUBJID"
+2143              ','
+2144                 "QSSEQ"
+2145              ','
+2146                 "QSTESTCD"
+2147              ','
+2148                 "QSTEST"
+2149              ','
+2150                 "QSCAT"
+2151              ','
+2152                 "QSORRES"
+2153              ','
+2154                 "QSSTRESC"
+2155              ','
+2156                 "QSSTRESN"
+2157              ','
+2158                 "QSSTAT"
+2159              ','
+2160                 "QSBLFL"
+2161              ','
+2162                 "VISITNUM"
+2163              ','
+2164                 "VISIT"
+2165              ','
+2166                 "VISITDY"
+2167              ','
+2168                 "EPOCH"
+2169              ','
+2170                 "QSDTC"
+2171              ','
+2172                 "QSDY"
+2173              ;
+2174            end;
+2175          set  INLIB.QS   end=EFIEOD;
+2176              format STUDYID $12. ;
+2177              format DOMAIN $2. ;
+55                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2178              format USUBJID $23. ;
+2179              format QSSEQ best12. ;
+2180              format QSTESTCD $8. ;
+2181              format QSTEST $40. ;
+2182              format QSCAT $34. ;
+2183              format QSORRES $200. ;
+2184              format QSSTRESC $200. ;
+2185              format QSSTRESN best12. ;
+2186              format QSSTAT $8. ;
+2187              format QSBLFL $1. ;
+2188              format VISITNUM best12. ;
+2189              format VISIT $23. ;
+2190              format VISITDY best12. ;
+2191              format EPOCH $22. ;
+2192              format QSDTC $10. ;
+2193              format QSDY best12. ;
+2194            do;
+2195              EFIOUT + 1;
+2196              put STUDYID $ @;
+2197              put DOMAIN $ @;
+2198              put USUBJID $ @;
+2199              put QSSEQ @;
+2200              put QSTESTCD $ @;
+2201              put QSTEST $ @;
+2202              put QSCAT $ @;
+2203              put QSORRES $ @;
+2204              put QSSTRESC $ @;
+2205              put QSSTRESN @;
+2206              put QSSTAT $ @;
+2207              put QSBLFL $ @;
+2208              put VISITNUM @;
+2209              put VISIT $ @;
+2210              put VISITDY @;
+2211              put EPOCH $ @;
+2212              put QSDTC $ @;
+2213              put QSDY ;
+2214              ;
+2215            end;
+2216           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2217           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2218           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\QS.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\QS.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 205689 records were written to the file 'E:\out\testIpsen\DAC_CSV\QS.csv'.
+      The minimum record length was 115.
+      The maximum record length was 250.
+NOTE: There were 205688 observations read from the data set INLIB.QS.
+NOTE: DATA statement used (Total process time):
+      real time           0.36 seconds
+56                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      cpu time            0.36 seconds
+      
+
+205688 records created in E:\out\testIpsen\DAC_CSV\QS.csv from INLIB.QS.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\QS.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.38 seconds
+      cpu time            0.39 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.RE to E:\out\testIpsen\DAC_CSV\RE.csv
+
+NOTE: No variables in data set INLIB.RE.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.RP to E:\out\testIpsen\DAC_CSV\RP.csv
+
+2219        /**********************************************************************
+2220        *   PRODUCT:   SAS
+2221        *   VERSION:   9.4
+2222        *   CREATOR:   External File Interface
+2223        *   DATE:      06JUL26
+2224        *   DESC:      Generated SAS Datastep Code
+2225        *   TEMPLATE SOURCE:  (None Specified.)
+2226        ***********************************************************************/
+2227           data _null_;
+2228           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2229           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2230           file 'E:\out\testIpsen\DAC_CSV\RP.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2231           if _n_ = 1 then        /* write column names or labels */
+2232            do;
+2233              put
+2234                 "STUDYID"
+2235              ','
+2236                 "DOMAIN"
+2237              ','
+57                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2238                 "USUBJID"
+2239              ','
+2240                 "RPSEQ"
+2241              ','
+2242                 "RPREFID"
+2243              ','
+2244                 "RPTESTCD"
+2245              ','
+2246                 "RPTEST"
+2247              ','
+2248                 "RPCAT"
+2249              ','
+2250                 "RPORRES"
+2251              ','
+2252                 "RPSTRESC"
+2253              ','
+2254                 "VISITNUM"
+2255              ','
+2256                 "VISIT"
+2257              ','
+2258                 "VISITDY"
+2259              ','
+2260                 "RPDTC"
+2261              ','
+2262                 "RPDY"
+2263              ;
+2264            end;
+2265          set  INLIB.RP   end=EFIEOD;
+2266              format STUDYID $12. ;
+2267              format DOMAIN $2. ;
+2268              format USUBJID $23. ;
+2269              format RPSEQ best12. ;
+2270              format RPREFID $5. ;
+2271              format RPTESTCD $8. ;
+2272              format RPTEST $38. ;
+2273              format RPCAT $20. ;
+2274              format RPORRES $127. ;
+2275              format RPSTRESC $127. ;
+2276              format VISITNUM best12. ;
+2277              format VISIT $17. ;
+2278              format VISITDY best12. ;
+2279              format RPDTC $10. ;
+2280              format RPDY best12. ;
+2281            do;
+2282              EFIOUT + 1;
+2283              put STUDYID $ @;
+2284              put DOMAIN $ @;
+2285              put USUBJID $ @;
+2286              put RPSEQ @;
+2287              put RPREFID $ @;
+2288              put RPTESTCD $ @;
+2289              put RPTEST $ @;
+2290              put RPCAT $ @;
+2291              put RPORRES $ @;
+58                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2292              put RPSTRESC $ @;
+2293              put VISITNUM @;
+2294              put VISIT $ @;
+2295              put VISITDY @;
+2296              put RPDTC $ @;
+2297              put RPDY ;
+2298              ;
+2299            end;
+2300           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2301           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2302           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\RP.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\RP.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 366 records were written to the file 'E:\out\testIpsen\DAC_CSV\RP.csv'.
+      The minimum record length was 109.
+      The maximum record length was 129.
+NOTE: There were 365 observations read from the data set INLIB.RP.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+365 records created in E:\out\testIpsen\DAC_CSV\RP.csv from INLIB.RP.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\RP.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SC to E:\out\testIpsen\DAC_CSV\SC.csv
+
+2303        /**********************************************************************
+2304        *   PRODUCT:   SAS
+2305        *   VERSION:   9.4
+2306        *   CREATOR:   External File Interface
+2307        *   DATE:      06JUL26
+2308        *   DESC:      Generated SAS Datastep Code
+2309        *   TEMPLATE SOURCE:  (None Specified.)
+2310        ***********************************************************************/
+2311           data _null_;
+2312           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2313           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+59                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2314           file 'E:\out\testIpsen\DAC_CSV\SC.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2315           if _n_ = 1 then        /* write column names or labels */
+2316            do;
+2317              put
+2318                 "STUDYID"
+2319              ','
+2320                 "DOMAIN"
+2321              ','
+2322                 "USUBJID"
+2323              ','
+2324                 "SCSEQ"
+2325              ','
+2326                 "SCTESTCD"
+2327              ','
+2328                 "SCTEST"
+2329              ','
+2330                 "SCORRES"
+2331              ','
+2332                 "SCSTRESC"
+2333              ','
+2334                 "SCSTAT"
+2335              ','
+2336                 "SCDTC"
+2337              ','
+2338                 "SCDY"
+2339              ;
+2340            end;
+2341          set  INLIB.SC   end=EFIEOD;
+2342              format STUDYID $12. ;
+2343              format DOMAIN $2. ;
+2344              format USUBJID $23. ;
+2345              format SCSEQ best12. ;
+2346              format SCTESTCD $7. ;
+2347              format SCTEST $28. ;
+2348              format SCORRES $3. ;
+2349              format SCSTRESC $3. ;
+2350              format SCSTAT $8. ;
+2351              format SCDTC $10. ;
+2352              format SCDY best12. ;
+2353            do;
+2354              EFIOUT + 1;
+2355              put STUDYID $ @;
+2356              put DOMAIN $ @;
+2357              put USUBJID $ @;
+2358              put SCSEQ @;
+2359              put SCTESTCD $ @;
+2360              put SCTEST $ @;
+2361              put SCORRES $ @;
+2362              put SCSTRESC $ @;
+2363              put SCSTAT $ @;
+2364              put SCDTC $ @;
+2365              put SCDY ;
+2366              ;
+2367            end;
+60                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2368           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2369           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2370           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SC.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SC.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 721 records were written to the file 'E:\out\testIpsen\DAC_CSV\SC.csv'.
+      The minimum record length was 79.
+      The maximum record length was 103.
+NOTE: There were 720 observations read from the data set INLIB.SC.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+720 records created in E:\out\testIpsen\DAC_CSV\SC.csv from INLIB.SC.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SC.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SE to E:\out\testIpsen\DAC_CSV\SE.csv
+
+2371        /**********************************************************************
+2372        *   PRODUCT:   SAS
+2373        *   VERSION:   9.4
+2374        *   CREATOR:   External File Interface
+2375        *   DATE:      06JUL26
+2376        *   DESC:      Generated SAS Datastep Code
+2377        *   TEMPLATE SOURCE:  (None Specified.)
+2378        ***********************************************************************/
+2379           data _null_;
+2380           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2381           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2382           file 'E:\out\testIpsen\DAC_CSV\SE.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2383           if _n_ = 1 then        /* write column names or labels */
+2384            do;
+2385              put
+2386                 "STUDYID"
+2387              ','
+2388                 "DOMAIN"
+2389              ','
+61                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2390                 "USUBJID"
+2391              ','
+2392                 "SESEQ"
+2393              ','
+2394                 "ETCD"
+2395              ','
+2396                 "ELEMENT"
+2397              ','
+2398                 "SESTDTC"
+2399              ','
+2400                 "SEENDTC"
+2401              ','
+2402                 "TAETORD"
+2403              ','
+2404                 "EPOCH"
+2405              ','
+2406                 "SESTDY"
+2407              ','
+2408                 "SEENDY"
+2409              ;
+2410            end;
+2411          set  INLIB.SE   end=EFIEOD;
+2412              format STUDYID $12. ;
+2413              format DOMAIN $2. ;
+2414              format USUBJID $23. ;
+2415              format SESEQ best12. ;
+2416              format ETCD $5. ;
+2417              format ELEMENT $30. ;
+2418              format SESTDTC $10. ;
+2419              format SEENDTC $10. ;
+2420              format TAETORD best12. ;
+2421              format EPOCH $22. ;
+2422              format SESTDY best12. ;
+2423              format SEENDY best12. ;
+2424            do;
+2425              EFIOUT + 1;
+2426              put STUDYID $ @;
+2427              put DOMAIN $ @;
+2428              put USUBJID $ @;
+2429              put SESEQ @;
+2430              put ETCD $ @;
+2431              put ELEMENT $ @;
+2432              put SESTDTC $ @;
+2433              put SEENDTC $ @;
+2434              put TAETORD @;
+2435              put EPOCH $ @;
+2436              put SESTDY @;
+2437              put SEENDY ;
+2438              ;
+2439            end;
+2440           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2441           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2442           run;
+
+62                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SE.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SE.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 2524 records were written to the file 'E:\out\testIpsen\DAC_CSV\SE.csv'.
+      The minimum record length was 85.
+      The maximum record length was 131.
+NOTE: There were 2523 observations read from the data set INLIB.SE.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+2523 records created in E:\out\testIpsen\DAC_CSV\SE.csv from INLIB.SE.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SE.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SU to E:\out\testIpsen\DAC_CSV\SU.csv
+
+2443        /**********************************************************************
+2444        *   PRODUCT:   SAS
+2445        *   VERSION:   9.4
+2446        *   CREATOR:   External File Interface
+2447        *   DATE:      06JUL26
+2448        *   DESC:      Generated SAS Datastep Code
+2449        *   TEMPLATE SOURCE:  (None Specified.)
+2450        ***********************************************************************/
+2451           data _null_;
+2452           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2453           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2454           file 'E:\out\testIpsen\DAC_CSV\SU.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2455           if _n_ = 1 then        /* write column names or labels */
+2456            do;
+2457              put
+2458                 "STUDYID"
+2459              ','
+2460                 "DOMAIN"
+2461              ','
+2462                 "USUBJID"
+2463              ','
+2464                 "SUSEQ"
+2465              ','
+63                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2466                 "SUTRT"
+2467              ','
+2468                 "SUDECOD"
+2469              ','
+2470                 "SUCAT"
+2471              ','
+2472                 "SUPRESP"
+2473              ','
+2474                 "SUOCCUR"
+2475              ','
+2476                 "SUSTAT"
+2477              ','
+2478                 "SUDOSE"
+2479              ','
+2480                 "SUDOSTXT"
+2481              ','
+2482                 "SUDOSU"
+2483              ','
+2484                 "SUDOSFRQ"
+2485              ','
+2486                 "VISITNUM"
+2487              ','
+2488                 "VISIT"
+2489              ','
+2490                 "VISITDY"
+2491              ','
+2492                 "SUSTDTC"
+2493              ','
+2494                 "SUENDTC"
+2495              ','
+2496                 "SUSTDY"
+2497              ','
+2498                 "SUENDY"
+2499              ','
+2500                 "SUDTC"
+2501              ','
+2502                 "SUDY"
+2503              ;
+2504            end;
+2505          set  INLIB.SU   end=EFIEOD;
+2506              format STUDYID $12. ;
+2507              format DOMAIN $2. ;
+2508              format USUBJID $23. ;
+2509              format SUSEQ best12. ;
+2510              format SUTRT $50. ;
+2511              format SUDECOD $18. ;
+2512              format SUCAT $8. ;
+2513              format SUPRESP $1. ;
+2514              format SUOCCUR $1. ;
+2515              format SUSTAT $8. ;
+2516              format SUDOSE best12. ;
+2517              format SUDOSTXT $157. ;
+2518              format SUDOSU $21. ;
+2519              format SUDOSFRQ $10. ;
+64                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2520              format VISITNUM best12. ;
+2521              format VISIT $23. ;
+2522              format VISITDY best12. ;
+2523              format SUSTDTC $10. ;
+2524              format SUENDTC $10. ;
+2525              format SUSTDY best12. ;
+2526              format SUENDY best12. ;
+2527              format SUDTC $10. ;
+2528              format SUDY best12. ;
+2529            do;
+2530              EFIOUT + 1;
+2531              put STUDYID $ @;
+2532              put DOMAIN $ @;
+2533              put USUBJID $ @;
+2534              put SUSEQ @;
+2535              put SUTRT $ @;
+2536              put SUDECOD $ @;
+2537              put SUCAT $ @;
+2538              put SUPRESP $ @;
+2539              put SUOCCUR $ @;
+2540              put SUSTAT $ @;
+2541              put SUDOSE @;
+2542              put SUDOSTXT $ @;
+2543              put SUDOSU $ @;
+2544              put SUDOSFRQ $ @;
+2545              put VISITNUM @;
+2546              put VISIT $ @;
+2547              put VISITDY @;
+2548              put SUSTDTC $ @;
+2549              put SUENDTC $ @;
+2550              put SUSTDY @;
+2551              put SUENDY @;
+2552              put SUDTC $ @;
+2553              put SUDY ;
+2554              ;
+2555            end;
+2556           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2557           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2558           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SU.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SU.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 32668 records were written to the file 'E:\out\testIpsen\DAC_CSV\SU.csv'.
+      The minimum record length was 84.
+      The maximum record length was 167.
+NOTE: There were 32667 observations read from the data set INLIB.SU.
+NOTE: DATA statement used (Total process time):
+      real time           0.06 seconds
+      cpu time            0.06 seconds
+      
+65                                          The SAS System                  14:16 Monday, July 6, 2026
+
+
+32667 records created in E:\out\testIpsen\DAC_CSV\SU.csv from INLIB.SU.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SU.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.08 seconds
+      cpu time            0.07 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: Exporting INLIB.SUPPAE to E:\out\testIpsen\DAC_CSV\SUPPAE.csv
+
+2559        /**********************************************************************
+2560        *   PRODUCT:   SAS
+2561        *   VERSION:   9.4
+2562        *   CREATOR:   External File Interface
+2563        *   DATE:      06JUL26
+2564        *   DESC:      Generated SAS Datastep Code
+2565        *   TEMPLATE SOURCE:  (None Specified.)
+2566        ***********************************************************************/
+2567           data _null_;
+2568           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2569           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2570           file 'E:\out\testIpsen\DAC_CSV\SUPPAE.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2571           if _n_ = 1 then        /* write column names or labels */
+2572            do;
+2573              put
+2574                 "STUDYID"
+2575              ','
+2576                 "RDOMAIN"
+2577              ','
+2578                 "USUBJID"
+2579              ','
+2580                 "IDVAR"
+2581              ','
+2582                 "IDVARVAL"
+2583              ','
+2584                 "QNAM"
+2585              ','
+2586                 "QLABEL"
+2587              ','
+2588                 "QVAL"
+2589              ','
+2590                 "QORIG"
+2591              ','
+2592                 "QEVAL"
+2593              ;
+2594            end;
+2595          set  INLIB.SUPPAE   end=EFIEOD;
+66                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2596              format STUDYID $12. ;
+2597              format RDOMAIN $2. ;
+2598              format USUBJID $23. ;
+2599              format IDVAR $5. ;
+2600              format IDVARVAL $2. ;
+2601              format QNAM $8. ;
+2602              format QLABEL $31. ;
+2603              format QVAL $122. ;
+2604              format QORIG $3. ;
+2605              format QEVAL $12. ;
+2606            do;
+2607              EFIOUT + 1;
+2608              put STUDYID $ @;
+2609              put RDOMAIN $ @;
+2610              put USUBJID $ @;
+2611              put IDVAR $ @;
+2612              put IDVARVAL $ @;
+2613              put QNAM $ @;
+2614              put QLABEL $ @;
+2615              put QVAL $ @;
+2616              put QORIG $ @;
+2617              put QEVAL $ ;
+2618              ;
+2619            end;
+2620           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2621           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2622           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SUPPAE.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SUPPAE.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 4024 records were written to the file 'E:\out\testIpsen\DAC_CSV\SUPPAE.csv'.
+      The minimum record length was 67.
+      The maximum record length was 121.
+NOTE: There were 4023 observations read from the data set INLIB.SUPPAE.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+4023 records created in E:\out\testIpsen\DAC_CSV\SUPPAE.csv from INLIB.SUPPAE.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SUPPAE.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+67                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPCM to E:\out\testIpsen\DAC_CSV\SUPPCM.csv
+
+2623        /**********************************************************************
+2624        *   PRODUCT:   SAS
+2625        *   VERSION:   9.4
+2626        *   CREATOR:   External File Interface
+2627        *   DATE:      06JUL26
+2628        *   DESC:      Generated SAS Datastep Code
+2629        *   TEMPLATE SOURCE:  (None Specified.)
+2630        ***********************************************************************/
+2631           data _null_;
+2632           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2633           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2634           file 'E:\out\testIpsen\DAC_CSV\SUPPCM.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2635           if _n_ = 1 then        /* write column names or labels */
+2636            do;
+2637              put
+2638                 "STUDYID"
+2639              ','
+2640                 "RDOMAIN"
+2641              ','
+2642                 "USUBJID"
+2643              ','
+2644                 "IDVAR"
+2645              ','
+2646                 "IDVARVAL"
+2647              ','
+2648                 "QNAM"
+2649              ','
+2650                 "QLABEL"
+2651              ','
+2652                 "QVAL"
+2653              ','
+2654                 "QORIG"
+2655              ','
+2656                 "QEVAL"
+2657              ;
+2658            end;
+2659          set  INLIB.SUPPCM   end=EFIEOD;
+2660              format STUDYID $12. ;
+2661              format RDOMAIN $2. ;
+2662              format USUBJID $23. ;
+2663              format IDVAR $5. ;
+2664              format IDVARVAL $3. ;
+2665              format QNAM $8. ;
+2666              format QLABEL $33. ;
+2667              format QVAL $199. ;
+2668              format QORIG $8. ;
+2669              format QEVAL $13. ;
+2670            do;
+2671              EFIOUT + 1;
+68                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2672              put STUDYID $ @;
+2673              put RDOMAIN $ @;
+2674              put USUBJID $ @;
+2675              put IDVAR $ @;
+2676              put IDVARVAL $ @;
+2677              put QNAM $ @;
+2678              put QLABEL $ @;
+2679              put QVAL $ @;
+2680              put QORIG $ @;
+2681              put QEVAL $ ;
+2682              ;
+2683            end;
+2684           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2685           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2686           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SUPPCM.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SUPPCM.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 130031 records were written to the file 'E:\out\testIpsen\DAC_CSV\SUPPCM.csv'.
+      The minimum record length was 67.
+      The maximum record length was 304.
+NOTE: There were 130030 observations read from the data set INLIB.SUPPCM.
+NOTE: DATA statement used (Total process time):
+      real time           0.11 seconds
+      cpu time            0.10 seconds
+      
+
+130030 records created in E:\out\testIpsen\DAC_CSV\SUPPCM.csv from INLIB.SUPPCM.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SUPPCM.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.13 seconds
+      cpu time            0.14 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPDM to E:\out\testIpsen\DAC_CSV\SUPPDM.csv
+
+NOTE: No variables in data set INLIB.SUPPDM.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+69                                          The SAS System                  14:16 Monday, July 6, 2026
+
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPDS to E:\out\testIpsen\DAC_CSV\SUPPDS.csv
+
+2687        /**********************************************************************
+2688        *   PRODUCT:   SAS
+2689        *   VERSION:   9.4
+2690        *   CREATOR:   External File Interface
+2691        *   DATE:      06JUL26
+2692        *   DESC:      Generated SAS Datastep Code
+2693        *   TEMPLATE SOURCE:  (None Specified.)
+2694        ***********************************************************************/
+2695           data _null_;
+2696           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2697           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2698           file 'E:\out\testIpsen\DAC_CSV\SUPPDS.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2699           if _n_ = 1 then        /* write column names or labels */
+2700            do;
+2701              put
+2702                 "STUDYID"
+2703              ','
+2704                 "RDOMAIN"
+2705              ','
+2706                 "USUBJID"
+2707              ','
+2708                 "IDVAR"
+2709              ','
+2710                 "IDVARVAL"
+2711              ','
+2712                 "QNAM"
+2713              ','
+2714                 "QLABEL"
+2715              ','
+2716                 "QVAL"
+2717              ','
+2718                 "QORIG"
+2719              ','
+2720                 "QEVAL"
+2721              ;
+2722            end;
+2723          set  INLIB.SUPPDS   end=EFIEOD;
+2724              format STUDYID $12. ;
+2725              format RDOMAIN $2. ;
+2726              format USUBJID $23. ;
+2727              format IDVAR $5. ;
+2728              format IDVARVAL $1. ;
+2729              format QNAM $8. ;
+2730              format QLABEL $40. ;
+2731              format QVAL $68. ;
+70                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2732              format QORIG $3. ;
+2733              format QEVAL $12. ;
+2734            do;
+2735              EFIOUT + 1;
+2736              put STUDYID $ @;
+2737              put RDOMAIN $ @;
+2738              put USUBJID $ @;
+2739              put IDVAR $ @;
+2740              put IDVARVAL $ @;
+2741              put QNAM $ @;
+2742              put QLABEL $ @;
+2743              put QVAL $ @;
+2744              put QORIG $ @;
+2745              put QEVAL $ ;
+2746              ;
+2747            end;
+2748           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2749           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2750           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SUPPDS.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SUPPDS.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 7644 records were written to the file 'E:\out\testIpsen\DAC_CSV\SUPPDS.csv'.
+      The minimum record length was 67.
+      The maximum record length was 135.
+NOTE: There were 7643 observations read from the data set INLIB.SUPPDS.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+7643 records created in E:\out\testIpsen\DAC_CSV\SUPPDS.csv from INLIB.SUPPDS.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SUPPDS.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPDV to E:\out\testIpsen\DAC_CSV\SUPPDV.csv
+
+2751        /**********************************************************************
+2752        *   PRODUCT:   SAS
+2753        *   VERSION:   9.4
+71                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2754        *   CREATOR:   External File Interface
+2755        *   DATE:      06JUL26
+2756        *   DESC:      Generated SAS Datastep Code
+2757        *   TEMPLATE SOURCE:  (None Specified.)
+2758        ***********************************************************************/
+2759           data _null_;
+2760           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2761           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2762           file 'E:\out\testIpsen\DAC_CSV\SUPPDV.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2763           if _n_ = 1 then        /* write column names or labels */
+2764            do;
+2765              put
+2766                 "STUDYID"
+2767              ','
+2768                 "RDOMAIN"
+2769              ','
+2770                 "USUBJID"
+2771              ','
+2772                 "IDVAR"
+2773              ','
+2774                 "IDVARVAL"
+2775              ','
+2776                 "QNAM"
+2777              ','
+2778                 "QLABEL"
+2779              ','
+2780                 "QVAL"
+2781              ','
+2782                 "QORIG"
+2783              ','
+2784                 "QEVAL"
+2785              ;
+2786            end;
+2787          set  INLIB.SUPPDV   end=EFIEOD;
+2788              format STUDYID $12. ;
+2789              format RDOMAIN $2. ;
+2790              format USUBJID $23. ;
+2791              format IDVAR $5. ;
+2792              format IDVARVAL $2. ;
+2793              format QNAM $8. ;
+2794              format QLABEL $31. ;
+2795              format QVAL $200. ;
+2796              format QORIG $8. ;
+2797              format QEVAL $12. ;
+2798            do;
+2799              EFIOUT + 1;
+2800              put STUDYID $ @;
+2801              put RDOMAIN $ @;
+2802              put USUBJID $ @;
+2803              put IDVAR $ @;
+2804              put IDVARVAL $ @;
+2805              put QNAM $ @;
+2806              put QLABEL $ @;
+2807              put QVAL $ @;
+72                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2808              put QORIG $ @;
+2809              put QEVAL $ ;
+2810              ;
+2811            end;
+2812           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2813           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2814           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SUPPDV.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SUPPDV.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 9107 records were written to the file 'E:\out\testIpsen\DAC_CSV\SUPPDV.csv'.
+      The minimum record length was 67.
+      The maximum record length was 219.
+NOTE: There were 9106 observations read from the data set INLIB.SUPPDV.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+9106 records created in E:\out\testIpsen\DAC_CSV\SUPPDV.csv from INLIB.SUPPDV.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SUPPDV.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPEG to E:\out\testIpsen\DAC_CSV\SUPPEG.csv
+
+2815        /**********************************************************************
+2816        *   PRODUCT:   SAS
+2817        *   VERSION:   9.4
+2818        *   CREATOR:   External File Interface
+2819        *   DATE:      06JUL26
+2820        *   DESC:      Generated SAS Datastep Code
+2821        *   TEMPLATE SOURCE:  (None Specified.)
+2822        ***********************************************************************/
+2823           data _null_;
+2824           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2825           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2826           file 'E:\out\testIpsen\DAC_CSV\SUPPEG.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2827           if _n_ = 1 then        /* write column names or labels */
+2828            do;
+2829              put
+73                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2830                 "STUDYID"
+2831              ','
+2832                 "RDOMAIN"
+2833              ','
+2834                 "USUBJID"
+2835              ','
+2836                 "IDVAR"
+2837              ','
+2838                 "IDVARVAL"
+2839              ','
+2840                 "QNAM"
+2841              ','
+2842                 "QLABEL"
+2843              ','
+2844                 "QVAL"
+2845              ','
+2846                 "QORIG"
+2847              ','
+2848                 "QEVAL"
+2849              ;
+2850            end;
+2851          set  INLIB.SUPPEG   end=EFIEOD;
+2852              format STUDYID $12. ;
+2853              format RDOMAIN $2. ;
+2854              format USUBJID $23. ;
+2855              format IDVAR $5. ;
+2856              format IDVARVAL $1. ;
+2857              format QNAM $7. ;
+2858              format QLABEL $23. ;
+2859              format QVAL $1. ;
+2860              format QORIG $3. ;
+2861              format QEVAL $12. ;
+2862            do;
+2863              EFIOUT + 1;
+2864              put STUDYID $ @;
+2865              put RDOMAIN $ @;
+2866              put USUBJID $ @;
+2867              put IDVAR $ @;
+2868              put IDVARVAL $ @;
+2869              put QNAM $ @;
+2870              put QLABEL $ @;
+2871              put QVAL $ @;
+2872              put QORIG $ @;
+2873              put QEVAL $ ;
+2874              ;
+2875            end;
+2876           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2877           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2878           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SUPPEG.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SUPPEG.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:16,
+74                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      Create Time=06Jul2026:14:16:16
+
+NOTE: 890 records were written to the file 'E:\out\testIpsen\DAC_CSV\SUPPEG.csv'.
+      The minimum record length was 67.
+      The maximum record length was 98.
+NOTE: There were 889 observations read from the data set INLIB.SUPPEG.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+889 records created in E:\out\testIpsen\DAC_CSV\SUPPEG.csv from INLIB.SUPPEG.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SUPPEG.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPEX to E:\out\testIpsen\DAC_CSV\SUPPEX.csv
+
+2879        /**********************************************************************
+2880        *   PRODUCT:   SAS
+2881        *   VERSION:   9.4
+2882        *   CREATOR:   External File Interface
+2883        *   DATE:      06JUL26
+2884        *   DESC:      Generated SAS Datastep Code
+2885        *   TEMPLATE SOURCE:  (None Specified.)
+2886        ***********************************************************************/
+2887           data _null_;
+2888           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2889           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2890           file 'E:\out\testIpsen\DAC_CSV\SUPPEX.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2891           if _n_ = 1 then        /* write column names or labels */
+2892            do;
+2893              put
+2894                 "STUDYID"
+2895              ','
+2896                 "RDOMAIN"
+2897              ','
+2898                 "USUBJID"
+2899              ','
+2900                 "IDVAR"
+2901              ','
+2902                 "IDVARVAL"
+2903              ','
+2904                 "QNAM"
+2905              ','
+75                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2906                 "QLABEL"
+2907              ','
+2908                 "QVAL"
+2909              ','
+2910                 "QORIG"
+2911              ','
+2912                 "QEVAL"
+2913              ;
+2914            end;
+2915          set  INLIB.SUPPEX   end=EFIEOD;
+2916              format STUDYID $12. ;
+2917              format RDOMAIN $2. ;
+2918              format USUBJID $23. ;
+2919              format IDVAR $5. ;
+2920              format IDVARVAL $2. ;
+2921              format QNAM $8. ;
+2922              format QLABEL $40. ;
+2923              format QVAL $68. ;
+2924              format QORIG $3. ;
+2925              format QEVAL $12. ;
+2926            do;
+2927              EFIOUT + 1;
+2928              put STUDYID $ @;
+2929              put RDOMAIN $ @;
+2930              put USUBJID $ @;
+2931              put IDVAR $ @;
+2932              put IDVARVAL $ @;
+2933              put QNAM $ @;
+2934              put QLABEL $ @;
+2935              put QVAL $ @;
+2936              put QORIG $ @;
+2937              put QEVAL $ ;
+2938              ;
+2939            end;
+2940           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+2941           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+2942           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SUPPEX.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SUPPEX.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 93 records were written to the file 'E:\out\testIpsen\DAC_CSV\SUPPEX.csv'.
+      The minimum record length was 67.
+      The maximum record length was 116.
+NOTE: There were 92 observations read from the data set INLIB.SUPPEX.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+92 records created in E:\out\testIpsen\DAC_CSV\SUPPEX.csv from INLIB.SUPPEX.
+76                                          The SAS System                  14:16 Monday, July 6, 2026
+
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SUPPEX.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPLB to E:\out\testIpsen\DAC_CSV\SUPPLB.csv
+
+2943        /**********************************************************************
+2944        *   PRODUCT:   SAS
+2945        *   VERSION:   9.4
+2946        *   CREATOR:   External File Interface
+2947        *   DATE:      06JUL26
+2948        *   DESC:      Generated SAS Datastep Code
+2949        *   TEMPLATE SOURCE:  (None Specified.)
+2950        ***********************************************************************/
+2951           data _null_;
+2952           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+2953           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+2954           file 'E:\out\testIpsen\DAC_CSV\SUPPLB.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+2955           if _n_ = 1 then        /* write column names or labels */
+2956            do;
+2957              put
+2958                 "STUDYID"
+2959              ','
+2960                 "RDOMAIN"
+2961              ','
+2962                 "USUBJID"
+2963              ','
+2964                 "IDVAR"
+2965              ','
+2966                 "IDVARVAL"
+2967              ','
+2968                 "QNAM"
+2969              ','
+2970                 "QLABEL"
+2971              ','
+2972                 "QVAL"
+2973              ','
+2974                 "QORIG"
+2975              ','
+2976                 "QEVAL"
+2977              ;
+2978            end;
+2979          set  INLIB.SUPPLB   end=EFIEOD;
+2980              format STUDYID $12. ;
+2981              format RDOMAIN $2. ;
+77                                          The SAS System                  14:16 Monday, July 6, 2026
+
+2982              format USUBJID $23. ;
+2983              format IDVAR $5. ;
+2984              format IDVARVAL $4. ;
+2985              format QNAM $6. ;
+2986              format QLABEL $13. ;
+2987              format QVAL $11. ;
+2988              format QORIG $3. ;
+2989              format QEVAL $12. ;
+2990            do;
+2991              EFIOUT + 1;
+2992              put STUDYID $ @;
+2993              put RDOMAIN $ @;
+2994              put USUBJID $ @;
+2995              put IDVAR $ @;
+2996              put IDVARVAL $ @;
+2997              put QNAM $ @;
+2998              put QLABEL $ @;
+2999              put QVAL $ @;
+3000              put QORIG $ @;
+3001              put QEVAL $ ;
+3002              ;
+3003            end;
+3004           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+3005           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+3006           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SUPPLB.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SUPPLB.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 656542 records were written to the file 'E:\out\testIpsen\DAC_CSV\SUPPLB.csv'.
+      The minimum record length was 67.
+      The maximum record length was 99.
+NOTE: There were 656541 observations read from the data set INLIB.SUPPLB.
+NOTE: DATA statement used (Total process time):
+      real time           0.39 seconds
+      cpu time            0.39 seconds
+      
+
+656541 records created in E:\out\testIpsen\DAC_CSV\SUPPLB.csv from INLIB.SUPPLB.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SUPPLB.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.41 seconds
+      cpu time            0.40 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+78                                          The SAS System                  14:16 Monday, July 6, 2026
+
+
+NOTE: Exporting INLIB.SUPPMI to E:\out\testIpsen\DAC_CSV\SUPPMI.csv
+
+NOTE: No variables in data set INLIB.SUPPMI.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.SUPPMO to E:\out\testIpsen\DAC_CSV\SUPPMO.csv
+
+NOTE: No variables in data set INLIB.SUPPMO.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+NOTE: Exporting INLIB.SV to E:\out\testIpsen\DAC_CSV\SV.csv
+
+3007        /**********************************************************************
+3008        *   PRODUCT:   SAS
+3009        *   VERSION:   9.4
+3010        *   CREATOR:   External File Interface
+3011        *   DATE:      06JUL26
+3012        *   DESC:      Generated SAS Datastep Code
+3013        *   TEMPLATE SOURCE:  (None Specified.)
+3014        ***********************************************************************/
+3015           data _null_;
+3016           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+3017           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+3018           file 'E:\out\testIpsen\DAC_CSV\SV.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+3019           if _n_ = 1 then        /* write column names or labels */
+3020            do;
+3021              put
+3022                 "STUDYID"
+3023              ','
+3024                 "DOMAIN"
+3025              ','
+79                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3026                 "USUBJID"
+3027              ','
+3028                 "VISITNUM"
+3029              ','
+3030                 "VISIT"
+3031              ','
+3032                 "VISITDY"
+3033              ','
+3034                 "SVSTDTC"
+3035              ','
+3036                 "SVENDTC"
+3037              ','
+3038                 "SVSTDY"
+3039              ','
+3040                 "SVENDY"
+3041              ;
+3042            end;
+3043          set  INLIB.SV   end=EFIEOD;
+3044              format STUDYID $12. ;
+3045              format DOMAIN $2. ;
+3046              format USUBJID $23. ;
+3047              format VISITNUM best12. ;
+3048              format VISIT $23. ;
+3049              format VISITDY best12. ;
+3050              format SVSTDTC $10. ;
+3051              format SVENDTC $10. ;
+3052              format SVSTDY best12. ;
+3053              format SVENDY best12. ;
+3054            do;
+3055              EFIOUT + 1;
+3056              put STUDYID $ @;
+3057              put DOMAIN $ @;
+3058              put USUBJID $ @;
+3059              put VISITNUM @;
+3060              put VISIT $ @;
+3061              put VISITDY @;
+3062              put SVSTDTC $ @;
+3063              put SVENDTC $ @;
+3064              put SVSTDY @;
+3065              put SVENDY ;
+3066              ;
+3067            end;
+3068           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+3069           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+3070           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\SV.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\SV.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 9024 records were written to the file 'E:\out\testIpsen\DAC_CSV\SV.csv'.
+      The minimum record length was 75.
+80                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      The maximum record length was 102.
+NOTE: There were 9023 observations read from the data set INLIB.SV.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+9023 records created in E:\out\testIpsen\DAC_CSV\SV.csv from INLIB.SV.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\SV.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.TA to E:\out\testIpsen\DAC_CSV\TA.csv
+
+3071        /**********************************************************************
+3072        *   PRODUCT:   SAS
+3073        *   VERSION:   9.4
+3074        *   CREATOR:   External File Interface
+3075        *   DATE:      06JUL26
+3076        *   DESC:      Generated SAS Datastep Code
+3077        *   TEMPLATE SOURCE:  (None Specified.)
+3078        ***********************************************************************/
+3079           data _null_;
+3080           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+3081           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+3082           file 'E:\out\testIpsen\DAC_CSV\TA.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+3083           if _n_ = 1 then        /* write column names or labels */
+3084            do;
+3085              put
+3086                 "STUDYID"
+3087              ','
+3088                 "DOMAIN"
+3089              ','
+3090                 "ARMCD"
+3091              ','
+3092                 "ARM"
+3093              ','
+3094                 "TAETORD"
+3095              ','
+3096                 "ETCD"
+3097              ','
+3098                 "ELEMENT"
+3099              ','
+3100                 "TABRANCH"
+3101              ','
+81                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3102                 "TATRANS"
+3103              ','
+3104                 "EPOCH"
+3105              ;
+3106            end;
+3107          set  INLIB.TA   end=EFIEOD;
+3108              format STUDYID $12. ;
+3109              format DOMAIN $2. ;
+3110              format ARMCD $10. ;
+3111              format ARM $20. ;
+3112              format TAETORD best12. ;
+3113              format ETCD $5. ;
+3114              format ELEMENT $30. ;
+3115              format TABRANCH $21. ;
+3116              format TATRANS $100. ;
+3117              format EPOCH $22. ;
+3118            do;
+3119              EFIOUT + 1;
+3120              put STUDYID $ @;
+3121              put DOMAIN $ @;
+3122              put ARMCD $ @;
+3123              put ARM $ @;
+3124              put TAETORD @;
+3125              put ETCD $ @;
+3126              put ELEMENT $ @;
+3127              put TABRANCH $ @;
+3128              put TATRANS $ @;
+3129              put EPOCH $ ;
+3130              ;
+3131            end;
+3132           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+3133           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+3134           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\TA.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\TA.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 9 records were written to the file 'E:\out\testIpsen\DAC_CSV\TA.csv'.
+      The minimum record length was 58.
+      The maximum record length was 209.
+NOTE: There were 8 observations read from the data set INLIB.TA.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+8 records created in E:\out\testIpsen\DAC_CSV\TA.csv from INLIB.TA.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\TA.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+82                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.TE to E:\out\testIpsen\DAC_CSV\TE.csv
+
+3135        /**********************************************************************
+3136        *   PRODUCT:   SAS
+3137        *   VERSION:   9.4
+3138        *   CREATOR:   External File Interface
+3139        *   DATE:      06JUL26
+3140        *   DESC:      Generated SAS Datastep Code
+3141        *   TEMPLATE SOURCE:  (None Specified.)
+3142        ***********************************************************************/
+3143           data _null_;
+3144           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+3145           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+3146           file 'E:\out\testIpsen\DAC_CSV\TE.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+3147           if _n_ = 1 then        /* write column names or labels */
+3148            do;
+3149              put
+3150                 "STUDYID"
+3151              ','
+3152                 "DOMAIN"
+3153              ','
+3154                 "ETCD"
+3155              ','
+3156                 "ELEMENT"
+3157              ','
+3158                 "TESTRL"
+3159              ','
+3160                 "TEENRL"
+3161              ','
+3162                 "TEDUR"
+3163              ;
+3164            end;
+3165          set  INLIB.TE   end=EFIEOD;
+3166              format STUDYID $12. ;
+3167              format DOMAIN $2. ;
+3168              format ETCD $5. ;
+3169              format ELEMENT $30. ;
+3170              format TESTRL $58. ;
+3171              format TEENRL $69. ;
+3172              format TEDUR $5. ;
+3173            do;
+3174              EFIOUT + 1;
+3175              put STUDYID $ @;
+3176              put DOMAIN $ @;
+3177              put ETCD $ @;
+83                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3178              put ELEMENT $ @;
+3179              put TESTRL $ @;
+3180              put TEENRL $ @;
+3181              put TEDUR $ ;
+3182              ;
+3183            end;
+3184           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+3185           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+3186           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\TE.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\TE.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 7 records were written to the file 'E:\out\testIpsen\DAC_CSV\TE.csv'.
+      The minimum record length was 47.
+      The maximum record length was 134.
+NOTE: There were 6 observations read from the data set INLIB.TE.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+6 records created in E:\out\testIpsen\DAC_CSV\TE.csv from INLIB.TE.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\TE.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.TS to E:\out\testIpsen\DAC_CSV\TS.csv
+
+3187        /**********************************************************************
+3188        *   PRODUCT:   SAS
+3189        *   VERSION:   9.4
+3190        *   CREATOR:   External File Interface
+3191        *   DATE:      06JUL26
+3192        *   DESC:      Generated SAS Datastep Code
+3193        *   TEMPLATE SOURCE:  (None Specified.)
+3194        ***********************************************************************/
+3195           data _null_;
+3196           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+3197           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+3198           file 'E:\out\testIpsen\DAC_CSV\TS.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+3199           if _n_ = 1 then        /* write column names or labels */
+84                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3200            do;
+3201              put
+3202                 "STUDYID"
+3203              ','
+3204                 "DOMAIN"
+3205              ','
+3206                 "TSSEQ"
+3207              ','
+3208                 "TSGRPID"
+3209              ','
+3210                 "TSPARMCD"
+3211              ','
+3212                 "TSPARM"
+3213              ','
+3214                 "TSVAL"
+3215              ','
+3216                 "TSVAL1"
+3217              ','
+3218                 "TSVALCD"
+3219              ','
+3220                 "TSVCDREF"
+3221              ','
+3222                 "TSVCDVER"
+3223              ;
+3224            end;
+3225          set  INLIB.TS   end=EFIEOD;
+3226              format STUDYID $12. ;
+3227              format DOMAIN $2. ;
+3228              format TSSEQ best12. ;
+3229              format TSGRPID $9. ;
+3230              format TSPARMCD $8. ;
+3231              format TSPARM $40. ;
+3232              format TSVAL $199. ;
+3233              format TSVAL1 $200. ;
+3234              format TSVALCD $11. ;
+3235              format TSVCDREF $18. ;
+3236              format TSVCDVER $10. ;
+3237            do;
+3238              EFIOUT + 1;
+3239              put STUDYID $ @;
+3240              put DOMAIN $ @;
+3241              put TSSEQ @;
+3242              put TSGRPID $ @;
+3243              put TSPARMCD $ @;
+3244              put TSPARM $ @;
+3245              put TSVAL $ @;
+3246              put TSVAL1 $ @;
+3247              put TSVALCD $ @;
+3248              put TSVCDREF $ @;
+3249              put TSVCDVER $ ;
+3250              ;
+3251            end;
+3252           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+3253           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+85                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3254           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\TS.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\TS.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 74 records were written to the file 'E:\out\testIpsen\DAC_CSV\TS.csv'.
+      The minimum record length was 46.
+      The maximum record length was 461.
+NOTE: There were 73 observations read from the data set INLIB.TS.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+73 records created in E:\out\testIpsen\DAC_CSV\TS.csv from INLIB.TS.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\TS.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.TV to E:\out\testIpsen\DAC_CSV\TV.csv
+
+3255        /**********************************************************************
+3256        *   PRODUCT:   SAS
+3257        *   VERSION:   9.4
+3258        *   CREATOR:   External File Interface
+3259        *   DATE:      06JUL26
+3260        *   DESC:      Generated SAS Datastep Code
+3261        *   TEMPLATE SOURCE:  (None Specified.)
+3262        ***********************************************************************/
+3263           data _null_;
+3264           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+3265           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+3266           file 'E:\out\testIpsen\DAC_CSV\TV.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+3267           if _n_ = 1 then        /* write column names or labels */
+3268            do;
+3269              put
+3270                 "STUDYID"
+3271              ','
+3272                 "DOMAIN"
+3273              ','
+3274                 "VISITNUM"
+3275              ','
+86                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3276                 "VISIT"
+3277              ','
+3278                 "VISITDY"
+3279              ','
+3280                 "ARMCD"
+3281              ','
+3282                 "TVSTRL"
+3283              ;
+3284            end;
+3285          set  INLIB.TV   end=EFIEOD;
+3286              format STUDYID $12. ;
+3287              format DOMAIN $2. ;
+3288              format VISITNUM best12. ;
+3289              format VISIT $27. ;
+3290              format VISITDY best12. ;
+3291              format ARMCD $1. ;
+3292              format TVSTRL $56. ;
+3293            do;
+3294              EFIOUT + 1;
+3295              put STUDYID $ @;
+3296              put DOMAIN $ @;
+3297              put VISITNUM @;
+3298              put VISIT $ @;
+3299              put VISITDY @;
+3300              put ARMCD $ @;
+3301              put TVSTRL $ ;
+3302              ;
+3303            end;
+3304           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+3305           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+3306           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\TV.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\TV.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 42 records were written to the file 'E:\out\testIpsen\DAC_CSV\TV.csv'.
+      The minimum record length was 42.
+      The maximum record length was 104.
+NOTE: There were 41 observations read from the data set INLIB.TV.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+41 records created in E:\out\testIpsen\DAC_CSV\TV.csv from INLIB.TV.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\TV.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+87                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.VE to E:\out\testIpsen\DAC_CSV\VE.csv
+
+NOTE: No variables in data set INLIB.VE.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.03 seconds
+      
+
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: Exporting INLIB.VS to E:\out\testIpsen\DAC_CSV\VS.csv
+
+3307        /**********************************************************************
+3308        *   PRODUCT:   SAS
+3309        *   VERSION:   9.4
+3310        *   CREATOR:   External File Interface
+3311        *   DATE:      06JUL26
+3312        *   DESC:      Generated SAS Datastep Code
+3313        *   TEMPLATE SOURCE:  (None Specified.)
+3314        ***********************************************************************/
+3315           data _null_;
+3316           %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+3317           %let _EFIREC_ = 0;     /* clear export record count macro variable */
+3318           file 'E:\out\testIpsen\DAC_CSV\VS.csv' delimiter=',' DSD DROPOVER lrecl=32767;
+3319           if _n_ = 1 then        /* write column names or labels */
+3320            do;
+3321              put
+3322                 "STUDYID"
+3323              ','
+3324                 "DOMAIN"
+3325              ','
+3326                 "USUBJID"
+3327              ','
+3328                 "VSSEQ"
+3329              ','
+3330                 "VSTESTCD"
+3331              ','
+3332                 "VSTEST"
+3333              ','
+3334                 "VSCAT"
+3335              ','
+88                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3336                 "VSPOS"
+3337              ','
+3338                 "VSORRES"
+3339              ','
+3340                 "VSORRESU"
+3341              ','
+3342                 "VSSTRESC"
+3343              ','
+3344                 "VSSTRESN"
+3345              ','
+3346                 "VSSTRESU"
+3347              ','
+3348                 "VSSTAT"
+3349              ','
+3350                 "VSBLFL"
+3351              ','
+3352                 "VISITNUM"
+3353              ','
+3354                 "VISIT"
+3355              ','
+3356                 "VISITDY"
+3357              ','
+3358                 "EPOCH"
+3359              ','
+3360                 "VSDTC"
+3361              ','
+3362                 "VSDY"
+3363              ;
+3364            end;
+3365          set  INLIB.VS   end=EFIEOD;
+3366              format STUDYID $12. ;
+3367              format DOMAIN $2. ;
+3368              format USUBJID $23. ;
+3369              format VSSEQ best12. ;
+3370              format VSTESTCD $6. ;
+3371              format VSTEST $24. ;
+3372              format VSCAT $19. ;
+3373              format VSPOS $7. ;
+3374              format VSORRES $5. ;
+3375              format VSORRESU $9. ;
+3376              format VSSTRESC $5. ;
+3377              format VSSTRESN best12. ;
+3378              format VSSTRESU $9. ;
+3379              format VSSTAT $8. ;
+3380              format VSBLFL $1. ;
+3381              format VISITNUM best12. ;
+3382              format VISIT $23. ;
+3383              format VISITDY best12. ;
+3384              format EPOCH $22. ;
+3385              format VSDTC $10. ;
+3386              format VSDY best12. ;
+3387            do;
+3388              EFIOUT + 1;
+3389              put STUDYID $ @;
+89                                          The SAS System                  14:16 Monday, July 6, 2026
+
+3390              put DOMAIN $ @;
+3391              put USUBJID $ @;
+3392              put VSSEQ @;
+3393              put VSTESTCD $ @;
+3394              put VSTEST $ @;
+3395              put VSCAT $ @;
+3396              put VSPOS $ @;
+3397              put VSORRES $ @;
+3398              put VSORRESU $ @;
+3399              put VSSTRESC $ @;
+3400              put VSSTRESN @;
+3401              put VSSTRESU $ @;
+3402              put VSSTAT $ @;
+3403              put VSBLFL $ @;
+3404              put VISITNUM @;
+3405              put VISIT $ @;
+3406              put VISITDY @;
+3407              put EPOCH $ @;
+3408              put VSDTC $ @;
+3409              put VSDY ;
+3410              ;
+3411            end;
+3412           if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+3413           if EFIEOD then call symputx('_EFIREC_',EFIOUT);
+3414           run;
+
+NOTE: The file 'E:\out\testIpsen\DAC_CSV\VS.csv' is:
+      Filename=E:\out\testIpsen\DAC_CSV\VS.csv,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 32474 records were written to the file 'E:\out\testIpsen\DAC_CSV\VS.csv'.
+      The minimum record length was 108.
+      The maximum record length was 186.
+NOTE: There were 32473 observations read from the data set INLIB.VS.
+NOTE: DATA statement used (Total process time):
+      real time           0.05 seconds
+      cpu time            0.04 seconds
+      
+
+32473 records created in E:\out\testIpsen\DAC_CSV\VS.csv from INLIB.VS.
+  
+  
+NOTE: "E:\out\testIpsen\DAC_CSV\VS.csv" file was successfully created.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.07 seconds
+      cpu time            0.07 seconds
+      
+
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+90                                          The SAS System                  14:16 Monday, July 6, 2026
+
+
+NOTE: Exporting INLIB.WR to E:\out\testIpsen\DAC_CSV\WR.csv
+
+NOTE: No variables in data set INLIB.WR.
+ERROR: Export unsuccessful.  See SAS Log for details.
+NOTE: The SAS System stopped processing this step because of errors.
+NOTE: PROCEDURE EXPORT used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.00 seconds
+      
+3415       
+3416       /* 7) Create error report based on SYSERR */
+
+
+3417       data _null_;
+3418           length dt $20 syserr_val $10;
+3419           file errlog;
+3420           dt = put(datetime(), datetime20.);
+3421           syserr_val = symget('SYSERR');
+3422       
+3423           put "SAS Error Report";
+3424           put "Generated: " dt;
+3425           put "----------------------------------------";
+3426       
+3427           if syserr_val ne '0' then do;
+3428               put "Errors detected. SYSERR = " syserr_val;
+3429               put "Check the SAS log for details.";
+3430           end;
+3431           else do;
+3432               put "No errors detected in the SAS run.";
+3433           end;
+3434       run;
+
+NOTE: The file ERRLOG is:
+      Filename=E:\out\testIpsen\DAC_Logs\error_log.txt,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:17,
+      Create Time=06Jul2026:14:16:17
+
+NOTE: 4 records were written to the file ERRLOG.
+      The minimum record length was 16.
+      The maximum record length was 40.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+3435       
+3436       /* 8) Clean up */
+3437       libname inlib clear;
+NOTE: Libref INLIB has been deassigned.
+3438       filename errlog clear;
+NOTE: Fileref ERRLOG has been deassigned.
+
+91                                          The SAS System                  14:16 Monday, July 6, 2026
+
+ERROR: Errors printed on pages 14,32,44,56,68,78,87,90.
+
+NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
+NOTE: The SAS System used:
+      real time           5.02 seconds
+      cpu time            4.95 seconds
+      

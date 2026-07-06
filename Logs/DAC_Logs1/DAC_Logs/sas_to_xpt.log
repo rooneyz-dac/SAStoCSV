@@ -1,0 +1,1158 @@
+1                                           The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: Copyright (c) 2016 by SAS Institute Inc., Cary, NC, USA. 
+NOTE: SAS (r) Proprietary Software 9.4 (TS1M5) 
+      Licensed to UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R, Site 70090515.
+NOTE: This session is executing on the X64_DSRV16  platform.
+
+
+
+NOTE: Updated analytical products:
+      
+      SAS/STAT 14.3
+      SAS/ETS 14.3
+      SAS/IML 14.3
+      SAS/QC 14.3
+
+WARNING: Your system is scheduled to expire on July 15, 2026, which is 9 days from now. The SAS 
+         System will no longer function on or after that date. Please contact your SAS Installation 
+         Representative to obtain your updated SAS Installation Data (SID) file, which includes 
+         SETINIT information.
+To locate the name of your SAS Installation Representative go to http://support.sas.com/repfinder and 
+provide your site number 70090515 and company name as UNIVERSITY OF CALIFORNIA SYSTEM-SFA-T&R. On the 
+SAS REP list provided, locate the REP for operating system Windows.
+NOTE: Additional host information:
+
+ X64_DSRV16 WIN 10.0.26100  Server
+
+NOTE: SAS initialization used:
+      real time           0.46 seconds
+      cpu time            0.35 seconds
+      
+1          /*------------------------------------------------------------------*
+2          | PROGRAM NAME : SAStoXPTcli20260320.sas
+3          | SHORT DESC   : Bidirectional batch conversion between SAS7BDAT
+4          |                and XPT (SAS Transport) formats via CLI
+5          *------------------------------------------------------------------*
+6          | CREATED BY   : DAC Development Team
+7          | DATE CREATED : 2025-11-21
+8          | VERSION      : 2.1
+9          *------------------------------------------------------------------*
+10         | PURPOSE
+11         | Performs batch bidirectional conversion of SAS datasets between
+12         | SAS7BDAT and XPT (SAS Transport) formats. When .sas7bdat files
+13         | are detected in the input directory they are converted to .xpt
+14         | and placed in OUTDIR\DAC_XPT. When .xpt files are detected they
+15         | are converted to .sas7bdat and placed in OUTDIR\DAC_SDTM. Both
+16         | conversion types may occur in a single run. An error log
+17         | (xpt_error_log.txt) is written to the DAC_Logs subdirectory.
+18         |
+19         | 1.0: REQUIRED SYSPARM PARAMETERS (pipe-delimited)
+20         | INPUT_DIRECTORY  = Path to folder containing .sas7bdat or .xpt
+21         |                    files to be converted
+22         | OUTPUT_DIRECTORY = Path to folder where output subfolders and
+23         |                    the error log will be created. Must exist
+24         |                    prior to execution.
+25         |
+2                                           The SAS System                  14:16 Monday, July 6, 2026
+
+26         | 2.0: XPT FORMAT LIMITATIONS
+27         | MEMBER NAMES     = Limited to 8 characters by the XPT format
+28         |                    specification. Dataset names longer than 8
+29         |                    characters are automatically truncated to the
+30         |                    first 4 characters concatenated with the last
+31         |                    4 characters.
+32         |                    Example: "berkeley_pbo_ae" becomes "berkl_ae"
+33         |
+34         | USAGE:
+35         |   sas -sysparm "input_directory|output_directory"
+36         |       -sysin SAStoXPTcli20260320.sas
+37         |
+38         | OUTPUT STRUCTURE:
+39         |   output_directory\
+40         |   ├── DAC_XPT\          - XPT exports (from .sas7bdat input)
+41         |   ├── DAC_SDTM\         - SAS7BDAT exports (from .xpt input)
+42         |   └── DAC_Logs\
+43         |       └── xpt_error_log.txt - Conversion activity and error log
+44         *------------------------------------------------------------------*
+45         | OPERATING SYSTEM COMPATIBILITY
+46         | SAS v9.4 or Higher: Yes
+47         | Windows:            Yes (uses DIR command for file listing)
+48         *------------------------------------------------------------------*
+49         | MACRO CALL
+50         |
+51         | Not applicable. Script is invoked directly via the SAS command
+52         | line using -sysin and -sysparm.
+53         *------------------------------------------------------------------*
+54         | EXAMPLES
+55         |
+56         | Convert SAS datasets to XPT format:
+57         |   sas -sysparm "C:\data\input|C:\data\output"
+58         |       -sysin SAStoXPTcli20260320.sas
+59         |
+60         | Convert XPT files back to SAS7BDAT:
+61         |   sas -sysparm "C:\data\xpt_files|C:\data\output"
+62         |       -sysin SAStoXPTcli20260320.sas
+63         |
+64         | Process a mixed directory (both .sas7bdat and .xpt present):
+65         |   sas -sysparm "C:\data\mixed|C:\data\output"
+66         |       -sysin SAStoXPTcli20260320.sas
+67         *------------------------------------------------------------------*/
+68         
+69         %macro convert_files;
+70             %let sysparm_value = &sysparm;
+71             %put DEBUG: Raw SYSPARM value = &sysparm_value;
+72         
+73             %let pipe_pos = %sysfunc(findc(&sysparm_value, |));
+74             %put DEBUG: Pipe position = &pipe_pos;
+75         
+76             %if &pipe_pos > 0 %then %do;
+77                 %let indir = %substr(&sysparm_value, 1, %eval(&pipe_pos - 1));
+78                 %let outdir = %substr(&sysparm_value, %eval(&pipe_pos + 1));
+79             %end;
+3                                           The SAS System                  14:16 Monday, July 6, 2026
+
+80             %else %do;
+81                 %put ERROR: Invalid SYSPARM format. Expected: input_directory|output_directory;
+82                 %abort;
+83             %end;
+84         
+85             %put DEBUG: Input Directory = &indir;
+86             %put DEBUG: Output Directory = &outdir;
+87         
+88             %let indir_exist = %sysfunc(fileexist(&indir));
+89             %let outdir_exist = %sysfunc(fileexist(&outdir));
+90         
+91             %if &indir_exist = 0 %then %do;
+92                 %put ERROR: Input directory does not exist: &indir;
+93                 %abort;
+94             %end;
+95         
+96             %if &outdir_exist = 0 %then %do;
+97                 %put ERROR: Output directory does not exist: &outdir;
+98                 %abort;
+99             %end;
+100        
+101            /* Create DAC_Logs subfolder if it does not exist */
+102            %let dac_logs_dir = &outdir\DAC_Logs;
+103            %let dac_logs_exist = %sysfunc(fileexist(&dac_logs_dir));
+104            %if &dac_logs_exist = 0 %then %do;
+105                %let rc = %sysfunc(dcreate(DAC_Logs, &outdir));
+106                %if %length(&rc) = 0 %then %do;
+107                    %put ERROR: Failed to create directory &dac_logs_dir;
+108                    %abort;
+109                %end;
+110            %end;
+111        
+112            %let errlog = &outdir\DAC_Logs\xpt_error_log.txt;
+113        
+114            data _null_;
+115                file "&errlog";
+116                length dt $19;
+117                dt = put(datetime(), datetime19.);
+118                put "Error Log - " dt;
+119                put "Input Directory: &indir";
+120                put "Output Directory: &outdir";
+121                put "----------------------------------------";
+122            run;
+123        
+124            filename infiles pipe "dir /b ""&indir\*.sas7bdat"" ""&indir\*.xpt"" 2>nul";
+125        
+126            data file_list;
+127                infile infiles truncover;
+128                input filename $256.;
+129                length filetype $10;
+130                if index(upcase(filename), '.SAS7BDAT') > 0 then filetype = 'SAS7BDAT';
+131                else if index(upcase(filename), '.XPT') > 0 then filetype = 'XPT';
+132            run;
+133        
+4                                           The SAS System                  14:16 Monday, July 6, 2026
+
+134            filename infiles clear;
+135        
+136            proc sql noprint;
+137                select count(*) into :sas7bdat_count trimmed from file_list where filetype =
+137      ! 'SAS7BDAT';
+138                select count(*) into :xpt_count trimmed from file_list where filetype = 'XPT';
+139            quit;
+140        
+141            %put DEBUG: Found &sas7bdat_count SAS7BDAT files;
+142            %put DEBUG: Found &xpt_count XPT files;
+143        
+144            %if &sas7bdat_count > 0 %then %do;
+145                %let xpt_dir = &outdir\DAC_XPT;
+146                %let xpt_exist = %sysfunc(fileexist(&xpt_dir));
+147        
+148                %if &xpt_exist = 0 %then %do;
+149                    %put DEBUG: Creating directory &xpt_dir;
+150                    %let rc = %sysfunc(dcreate(DAC_XPT, &outdir));
+151                    %if %length(&rc) = 0 %then %do;
+152                        %put ERROR: Failed to create directory &xpt_dir;
+153                        %abort;
+154                    %end;
+155                %end;
+156        
+157                libname inlib "&indir";
+158        
+159                data _null_;
+160                    set file_list end=eof;
+161                    where filetype = 'SAS7BDAT';
+162        
+163                    length dsname memname $32 xpt_path $256;
+164        
+165                    dsname = scan(filename, 1, '.');
+166        
+167                    /* Truncate to first 4 + last 4 characters for XPT compliance */
+168                    if length(dsname) > 8 then
+169                        memname = substr(dsname, 1, 4) || substr(dsname, length(dsname) - 3, 4);
+170                    else
+171                        memname = dsname;
+172        
+173                    xpt_path = "&xpt_dir\" || strip(memname) || ".xpt";
+174        
+175                    call execute('libname xptlib xport "' || strip(xpt_path) || '";');
+176        
+177                    /* Use PROC DATASETS to rename, then PROC COPY to transfer */
+178                    if dsname ne memname then do;
+179                        call execute('proc datasets library=inlib nolist; change ' || strip(dsname)
+179      !  || '=' || strip(memname) || '; quit;');
+180                    end;
+181        
+182                    call execute('proc copy in=inlib out=xptlib memtype=data; select ' ||
+182      ! strip(memname) || '; run;');
+183        
+184                    /* Rename back if needed */
+5                                           The SAS System                  14:16 Monday, July 6, 2026
+
+185                    if dsname ne memname then do;
+186                        call execute('proc datasets library=inlib nolist; change ' ||
+186      ! strip(memname) || '=' || strip(dsname) || '; quit;');
+187                    end;
+188        
+189                    call execute('libname xptlib clear;');
+190        
+191                    file "&errlog" mod;
+192                    put "Converted to XPT: " dsname " -> " memname " (" xpt_path ")";
+193        
+194                    if eof then do;
+195                        put "----------------------------------------";
+196                        put "Total SAS7BDAT files processed: " _n_;
+197                    end;
+198                run;
+199        
+200                libname inlib clear;
+201            %end;
+202        
+203            %if &xpt_count > 0 %then %do;
+204                %let sdtm_dir = &outdir\DAC_SDTM;
+205                %let sdtm_exist = %sysfunc(fileexist(&sdtm_dir));
+206        
+207                %if &sdtm_exist = 0 %then %do;
+208                    %put DEBUG: Creating directory &sdtm_dir;
+209                    %let rc = %sysfunc(dcreate(DAC_SDTM, &outdir));
+210                    %if %length(&rc) = 0 %then %do;
+211                        %put ERROR: Failed to create directory &sdtm_dir;
+212                        %abort;
+213                    %end;
+214                %end;
+215        
+216                libname outsdtm "&sdtm_dir";
+217        
+218                data _null_;
+219                    set file_list end=eof;
+220                    where filetype = 'XPT';
+221        
+222                    length dsname $32;
+223        
+224                    dsname = scan(filename, 1, '.');
+225        
+226                    call execute('libname xptlib xport "' || "&indir\" || strip(filename) || '";');
+227                    call execute('proc copy in=xptlib out=outsdtm; run;');
+228                    call execute('libname xptlib clear;');
+229        
+230                    file "&errlog" mod;
+231                    put "Converted to SAS7BDAT: " dsname;
+232        
+233                    if eof then do;
+234                        put "----------------------------------------";
+235                        put "Total XPT files processed: " _n_;
+236                    end;
+237                run;
+6                                           The SAS System                  14:16 Monday, July 6, 2026
+
+238        
+239                libname outsdtm clear;
+240            %end;
+241        
+242            %put DEBUG: Conversion process completed;
+243        
+244            data _null_;
+245                file "&errlog" mod;
+246                length dt $19;
+247                dt = put(datetime(), datetime19.);
+248                put "----------------------------------------";
+249                put "Process completed: " dt;
+250            run;
+251        
+252        %mend convert_files;
+253        
+254        %convert_files;
+DEBUG: Raw SYSPARM value = 
+E:\Data\04_ProjectData\MASHPDB\IPSEN\Resolve-IT_20250820\SDTMs|E:\out\testIpsen
+DEBUG: Pipe position = 63
+DEBUG: Input Directory = E:\Data\04_ProjectData\MASHPDB\IPSEN\Resolve-IT_20250820\SDTMs
+DEBUG: Output Directory = E:\out\testIpsen
+WARNING: The Base SAS Software product with which DATASTEP is associated will be expiring soon, and 
+         is currently in warning mode to indicate this upcoming expiration. Please run PROC SETINIT 
+         to obtain more information on your warning period.
+
+NOTE: The file "E:\out\testIpsen\DAC_Logs\xpt_error_log.txt" is:
+      Filename=E:\out\testIpsen\DAC_Logs\xpt_error_log.txt,
+      RECFM=V,LRECL=32767,File Size (bytes)=0,
+      Last Modified=06Jul2026:14:16:08,
+      Create Time=06Jul2026:14:16:08
+
+NOTE: 4 records were written to the file "E:\out\testIpsen\DAC_Logs\xpt_error_log.txt".
+      The minimum record length was 30.
+      The maximum record length was 79.
+NOTE: DATA statement used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+
+NOTE: The infile INFILES is:
+      Unnamed Pipe Access Device,
+      
+      PROCESS=dir /b "E:\Data\04_ProjectData\MASHPDB\IPSEN\Resolve-IT_20250820\SDTMs\*.sas7bdat" 
+      "E:\Data\04_ProjectData\MASHPDB\IPSEN\Resolve-IT_20250820\SDTMs\*.xpt" 2>nul,
+      RECFM=V,LRECL=32767
+
+NOTE: 46 records were read from the infile INFILES.
+      The minimum record length was 11.
+      The maximum record length was 15.
+NOTE: The data set WORK.FILE_LIST has 46 observations and 2 variables.
+NOTE: DATA statement used (Total process time):
+      real time           0.11 seconds
+7                                           The SAS System                  14:16 Monday, July 6, 2026
+
+      cpu time            0.00 seconds
+      
+
+NOTE: Fileref INFILES has been deassigned.
+NOTE: PROCEDURE SQL used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+DEBUG: Found 46 SAS7BDAT files
+DEBUG: Found 0 XPT files
+DEBUG: Creating directory E:\out\testIpsen\DAC_XPT
+NOTE: Libref INLIB was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: E:\Data\04_ProjectData\MASHPDB\IPSEN\Resolve-IT_20250820\SDTMs
+
+NOTE: The file "E:\out\testIpsen\DAC_Logs\xpt_error_log.txt" is:
+      Filename=E:\out\testIpsen\DAC_Logs\xpt_error_log.txt,
+      RECFM=V,LRECL=32767,File Size (bytes)=191,
+      Last Modified=06Jul2026:14:16:08,
+      Create Time=06Jul2026:14:16:08
+
+NOTE: 48 records were written to the file "E:\out\testIpsen\DAC_Logs\xpt_error_log.txt".
+      The minimum record length was 34.
+      The maximum record length was 75.
+NOTE: There were 46 observations read from the data set WORK.FILE_LIST.
+      WHERE filetype='SAS7BDAT';
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+NOTE: CALL EXECUTE generated line.
+1         + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ae.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ae.xpt
+2         + proc copy in=inlib out=xptlib memtype=data; select ae; run;
+
+NOTE: Copying INLIB.AE to XPTLIB.AE (memtype=DATA).
+NOTE: There were 4013 observations read from the data set INLIB.AE.
+NOTE: The data set XPTLIB.AE has 4013 observations and 36 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.01 seconds
+      
+
+3         + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+4         + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ce.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ce.xpt
+5         + proc copy in=inlib out=xptlib memtype=data; select ce; run;
+8                                           The SAS System                  14:16 Monday, July 6, 2026
+
+
+NOTE: Copying INLIB.CE to XPTLIB.CE (memtype=DATA).
+NOTE: There were 56 observations read from the data set INLIB.CE.
+NOTE: The data set XPTLIB.CE has 56 observations and 12 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+6         + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+7         + libname xptlib xport "E:\out\testIpsen\DAC_XPT\cm.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\cm.xpt
+8         + proc copy in=inlib out=xptlib memtype=data; select cm; run;
+
+NOTE: Copying INLIB.CM to XPTLIB.CM (memtype=DATA).
+NOTE: There were 12802 observations read from the data set INLIB.CM.
+NOTE: The data set XPTLIB.CM has 12802 observations and 22 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.05 seconds
+      cpu time            0.04 seconds
+      
+
+9         + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+10        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\co.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\co.xpt
+11        + proc copy in=inlib out=xptlib memtype=data; select co; run;
+
+NOTE: Copying INLIB.CO to XPTLIB.CO (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.CO.
+NOTE: The data set XPTLIB.CO has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+12        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+13        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\da.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\da.xpt
+14        + proc copy in=inlib out=xptlib memtype=data; select da; run;
+
+NOTE: Copying INLIB.DA to XPTLIB.DA (memtype=DATA).
+NOTE: There were 10443 observations read from the data set INLIB.DA.
+NOTE: The data set XPTLIB.DA has 10443 observations and 18 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.01 seconds
+9                                           The SAS System                  14:16 Monday, July 6, 2026
+
+      cpu time            0.01 seconds
+      
+
+15        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+16        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\dm.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\dm.xpt
+17        + proc copy in=inlib out=xptlib memtype=data; select dm; run;
+
+NOTE: Copying INLIB.DM to XPTLIB.DM (memtype=DATA).
+NOTE: There were 720 observations read from the data set INLIB.DM.
+NOTE: The data set XPTLIB.DM has 720 observations and 27 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+18        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+19        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ds.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ds.xpt
+20        + proc copy in=inlib out=xptlib memtype=data; select ds; run;
+
+NOTE: Copying INLIB.DS to XPTLIB.DS (memtype=DATA).
+NOTE: There were 3895 observations read from the data set INLIB.DS.
+NOTE: The data set XPTLIB.DS has 3895 observations and 11 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+21        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+22        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\dv.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\dv.xpt
+23        + proc copy in=inlib out=xptlib memtype=data; select dv; run;
+
+NOTE: Copying INLIB.DV to XPTLIB.DV (memtype=DATA).
+NOTE: There were 5421 observations read from the data set INLIB.DV.
+NOTE: The data set XPTLIB.DV has 5421 observations and 14 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+24        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+25        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ec.xpt";
+10                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ec.xpt
+26        + proc copy in=inlib out=xptlib memtype=data; select ec; run;
+
+NOTE: Copying INLIB.EC to XPTLIB.EC (memtype=DATA).
+NOTE: There were 10788 observations read from the data set INLIB.EC.
+NOTE: The data set XPTLIB.EC has 10788 observations and 21 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.02 seconds
+      cpu time            0.01 seconds
+      
+
+27        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+28        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\eg.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\eg.xpt
+29        + proc copy in=inlib out=xptlib memtype=data; select eg; run;
+
+NOTE: Copying INLIB.EG to XPTLIB.EG (memtype=DATA).
+NOTE: There were 2855 observations read from the data set INLIB.EG.
+NOTE: The data set XPTLIB.EG has 2855 observations and 20 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+30        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+31        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ex.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ex.xpt
+32        + proc copy in=inlib out=xptlib memtype=data; select ex; run;
+
+NOTE: Copying INLIB.EX to XPTLIB.EX (memtype=DATA).
+NOTE: There were 5367 observations read from the data set INLIB.EX.
+NOTE: The data set XPTLIB.EX has 5367 observations and 16 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+33        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+34        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\fa.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\fa.xpt
+35        + proc copy in=inlib out=xptlib memtype=data; select fa; run;
+
+NOTE: Copying INLIB.FA to XPTLIB.FA (memtype=DATA).
+11                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: There were 373 observations read from the data set INLIB.FA.
+NOTE: The data set XPTLIB.FA has 373 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+36        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+37        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ho.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ho.xpt
+38        + proc copy in=inlib out=xptlib memtype=data; select ho; run;
+
+NOTE: Copying INLIB.HO to XPTLIB.HO (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.HO.
+NOTE: The data set XPTLIB.HO has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+39        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+40        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ie.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ie.xpt
+41        + proc copy in=inlib out=xptlib memtype=data; select ie; run;
+
+NOTE: Copying INLIB.IE to XPTLIB.IE (memtype=DATA).
+NOTE: There were 21 observations read from the data set INLIB.IE.
+NOTE: The data set XPTLIB.IE has 21 observations and 13 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+42        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+43        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\lb.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\lb.xpt
+44        + proc copy in=inlib out=xptlib memtype=data; select lb; run;
+
+NOTE: Copying INLIB.LB to XPTLIB.LB (memtype=DATA).
+NOTE: There were 658430 observations read from the data set INLIB.LB.
+NOTE: The data set XPTLIB.LB has 658430 observations and 31 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           1.95 seconds
+      cpu time            0.81 seconds
+      
+12                                          The SAS System                  14:16 Monday, July 6, 2026
+
+
+45        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+46        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\mh.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\mh.xpt
+47        + proc copy in=inlib out=xptlib memtype=data; select mh; run;
+
+NOTE: Copying INLIB.MH to XPTLIB.MH (memtype=DATA).
+NOTE: There were 10271 observations read from the data set INLIB.MH.
+NOTE: The data set XPTLIB.MH has 10271 observations and 25 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.04 seconds
+      cpu time            0.01 seconds
+      
+
+48        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+49        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\mi.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\mi.xpt
+50        + proc copy in=inlib out=xptlib memtype=data; select mi; run;
+
+NOTE: Copying INLIB.MI to XPTLIB.MI (memtype=DATA).
+NOTE: There were 23748 observations read from the data set INLIB.MI.
+NOTE: The data set XPTLIB.MI has 23748 observations and 23 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.05 seconds
+      cpu time            0.01 seconds
+      
+
+51        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+52        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ml.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ml.xpt
+53        + proc copy in=inlib out=xptlib memtype=data; select ml; run;
+
+NOTE: Copying INLIB.ML to XPTLIB.ML (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.ML.
+NOTE: The data set XPTLIB.ML has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+54        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+55        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\mo.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+13                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      Physical Name: E:\out\testIpsen\DAC_XPT\mo.xpt
+56        + proc copy in=inlib out=xptlib memtype=data; select mo; run;
+
+NOTE: Copying INLIB.MO to XPTLIB.MO (memtype=DATA).
+NOTE: There were 11891 observations read from the data set INLIB.MO.
+NOTE: The data set XPTLIB.MO has 11891 observations and 17 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+57        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+58        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\pc.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\pc.xpt
+59        + proc copy in=inlib out=xptlib memtype=data; select pc; run;
+
+NOTE: Copying INLIB.PC to XPTLIB.PC (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.PC.
+NOTE: The data set XPTLIB.PC has 0 observations and 26 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+60        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+61        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\pe.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\pe.xpt
+62        + proc copy in=inlib out=xptlib memtype=data; select pe; run;
+
+NOTE: Copying INLIB.PE to XPTLIB.PE (memtype=DATA).
+NOTE: There were 6871 observations read from the data set INLIB.PE.
+NOTE: The data set XPTLIB.PE has 6871 observations and 15 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.00 seconds
+      
+
+63        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+64        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\pr.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\pr.xpt
+65        + proc copy in=inlib out=xptlib memtype=data; select pr; run;
+
+NOTE: Copying INLIB.PR to XPTLIB.PR (memtype=DATA).
+NOTE: There were 4488 observations read from the data set INLIB.PR.
+NOTE: The data set XPTLIB.PR has 4488 observations and 14 variables.
+14                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+66        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+67        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\qs.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\qs.xpt
+68        + proc copy in=inlib out=xptlib memtype=data; select qs; run;
+
+NOTE: Copying INLIB.QS to XPTLIB.QS (memtype=DATA).
+NOTE: There were 205688 observations read from the data set INLIB.QS.
+NOTE: The data set XPTLIB.QS has 205688 observations and 18 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.60 seconds
+      cpu time            0.23 seconds
+      
+
+69        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+70        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\re.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\re.xpt
+71        + proc copy in=inlib out=xptlib memtype=data; select re; run;
+
+NOTE: Copying INLIB.RE to XPTLIB.RE (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.RE.
+NOTE: The data set XPTLIB.RE has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+72        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+73        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\rp.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\rp.xpt
+74        + proc copy in=inlib out=xptlib memtype=data; select rp; run;
+
+NOTE: Copying INLIB.RP to XPTLIB.RP (memtype=DATA).
+NOTE: There were 365 observations read from the data set INLIB.RP.
+NOTE: The data set XPTLIB.RP has 365 observations and 15 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+75        + libname xptlib clear;
+15                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: Libref XPTLIB has been deassigned.
+76        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\sc.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\sc.xpt
+77        + proc copy in=inlib out=xptlib memtype=data; select sc; run;
+
+NOTE: Copying INLIB.SC to XPTLIB.SC (memtype=DATA).
+NOTE: There were 720 observations read from the data set INLIB.SC.
+NOTE: The data set XPTLIB.SC has 720 observations and 11 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+78        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+79        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\se.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\se.xpt
+80        + proc copy in=inlib out=xptlib memtype=data; select se; run;
+
+NOTE: Copying INLIB.SE to XPTLIB.SE (memtype=DATA).
+NOTE: There were 2523 observations read from the data set INLIB.SE.
+NOTE: The data set XPTLIB.SE has 2523 observations and 12 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+81        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+82        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\su.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\su.xpt
+83        + proc copy in=inlib out=xptlib memtype=data; select su; run;
+
+NOTE: Copying INLIB.SU to XPTLIB.SU (memtype=DATA).
+NOTE: There were 32667 observations read from the data set INLIB.SU.
+NOTE: The data set XPTLIB.SU has 32667 observations and 23 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.06 seconds
+      cpu time            0.00 seconds
+      
+
+84        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+85        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppae.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppae.xpt
+86        + proc copy in=inlib out=xptlib memtype=data; select suppae; run;
+16                                          The SAS System                  14:16 Monday, July 6, 2026
+
+
+NOTE: Copying INLIB.SUPPAE to XPTLIB.SUPPAE (memtype=DATA).
+NOTE: There were 4023 observations read from the data set INLIB.SUPPAE.
+NOTE: The data set XPTLIB.SUPPAE has 4023 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+87        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+88        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppcm.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppcm.xpt
+89        + proc copy in=inlib out=xptlib memtype=data; select suppcm; run;
+
+NOTE: Copying INLIB.SUPPCM to XPTLIB.SUPPCM (memtype=DATA).
+NOTE: There were 130030 observations read from the data set INLIB.SUPPCM.
+NOTE: The data set XPTLIB.SUPPCM has 130030 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.16 seconds
+      cpu time            0.09 seconds
+      
+
+90        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+91        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppdm.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppdm.xpt
+92        + proc copy in=inlib out=xptlib memtype=data; select suppdm; run;
+
+NOTE: Copying INLIB.SUPPDM to XPTLIB.SUPPDM (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.SUPPDM.
+NOTE: The data set XPTLIB.SUPPDM has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+93        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+94        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppds.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppds.xpt
+95        + proc copy in=inlib out=xptlib memtype=data; select suppds; run;
+
+NOTE: Copying INLIB.SUPPDS to XPTLIB.SUPPDS (memtype=DATA).
+NOTE: There were 7643 observations read from the data set INLIB.SUPPDS.
+NOTE: The data set XPTLIB.SUPPDS has 7643 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+17                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      cpu time            0.00 seconds
+      
+
+96        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+97        + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppdv.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppdv.xpt
+98        + proc copy in=inlib out=xptlib memtype=data; select suppdv; run;
+
+NOTE: Copying INLIB.SUPPDV to XPTLIB.SUPPDV (memtype=DATA).
+NOTE: There were 9106 observations read from the data set INLIB.SUPPDV.
+NOTE: The data set XPTLIB.SUPPDV has 9106 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.01 seconds
+      cpu time            0.01 seconds
+      
+
+99        + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+100       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppeg.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppeg.xpt
+101       + proc copy in=inlib out=xptlib memtype=data; select suppeg; run;
+
+NOTE: Copying INLIB.SUPPEG to XPTLIB.SUPPEG (memtype=DATA).
+NOTE: There were 889 observations read from the data set INLIB.SUPPEG.
+NOTE: The data set XPTLIB.SUPPEG has 889 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+102       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+103       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppex.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppex.xpt
+104       + proc copy in=inlib out=xptlib memtype=data; select suppex; run;
+
+NOTE: Copying INLIB.SUPPEX to XPTLIB.SUPPEX (memtype=DATA).
+NOTE: There were 92 observations read from the data set INLIB.SUPPEX.
+NOTE: The data set XPTLIB.SUPPEX has 92 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+105       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+106       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\supplb.xpt";
+18                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\supplb.xpt
+107       + proc copy in=inlib out=xptlib memtype=data; select supplb; run;
+
+NOTE: Copying INLIB.SUPPLB to XPTLIB.SUPPLB (memtype=DATA).
+NOTE: There were 656541 observations read from the data set INLIB.SUPPLB.
+NOTE: The data set XPTLIB.SUPPLB has 656541 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.23 seconds
+      cpu time            0.18 seconds
+      
+
+108       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+109       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppmi.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppmi.xpt
+110       + proc copy in=inlib out=xptlib memtype=data; select suppmi; run;
+
+NOTE: Copying INLIB.SUPPMI to XPTLIB.SUPPMI (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.SUPPMI.
+NOTE: The data set XPTLIB.SUPPMI has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+111       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+112       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\suppmo.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\suppmo.xpt
+113       + proc copy in=inlib out=xptlib memtype=data; select suppmo; run;
+
+NOTE: Copying INLIB.SUPPMO to XPTLIB.SUPPMO (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.SUPPMO.
+NOTE: The data set XPTLIB.SUPPMO has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+114       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+115       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\sv.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\sv.xpt
+116       + proc copy in=inlib out=xptlib memtype=data; select sv; run;
+
+NOTE: Copying INLIB.SV to XPTLIB.SV (memtype=DATA).
+19                                          The SAS System                  14:16 Monday, July 6, 2026
+
+NOTE: There were 9023 observations read from the data set INLIB.SV.
+NOTE: The data set XPTLIB.SV has 9023 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+117       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+118       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ta.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ta.xpt
+119       + proc copy in=inlib out=xptlib memtype=data; select ta; run;
+
+NOTE: Copying INLIB.TA to XPTLIB.TA (memtype=DATA).
+NOTE: There were 8 observations read from the data set INLIB.TA.
+NOTE: The data set XPTLIB.TA has 8 observations and 10 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+120       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+121       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\te.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\te.xpt
+122       + proc copy in=inlib out=xptlib memtype=data; select te; run;
+
+NOTE: Copying INLIB.TE to XPTLIB.TE (memtype=DATA).
+NOTE: There were 6 observations read from the data set INLIB.TE.
+NOTE: The data set XPTLIB.TE has 6 observations and 7 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+123       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+124       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ts.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ts.xpt
+125       + proc copy in=inlib out=xptlib memtype=data; select ts; run;
+
+NOTE: Copying INLIB.TS to XPTLIB.TS (memtype=DATA).
+NOTE: There were 73 observations read from the data set INLIB.TS.
+NOTE: The data set XPTLIB.TS has 73 observations and 11 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+20                                          The SAS System                  14:16 Monday, July 6, 2026
+
+
+126       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+127       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\tv.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\tv.xpt
+128       + proc copy in=inlib out=xptlib memtype=data; select tv; run;
+
+NOTE: Copying INLIB.TV to XPTLIB.TV (memtype=DATA).
+NOTE: There were 41 observations read from the data set INLIB.TV.
+NOTE: The data set XPTLIB.TV has 41 observations and 7 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+129       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+130       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\ve.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\ve.xpt
+131       + proc copy in=inlib out=xptlib memtype=data; select ve; run;
+
+NOTE: Copying INLIB.VE to XPTLIB.VE (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.VE.
+NOTE: The data set XPTLIB.VE has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+132       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+133       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\vs.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+      Physical Name: E:\out\testIpsen\DAC_XPT\vs.xpt
+134       + proc copy in=inlib out=xptlib memtype=data; select vs; run;
+
+NOTE: Copying INLIB.VS to XPTLIB.VS (memtype=DATA).
+NOTE: There were 32473 observations read from the data set INLIB.VS.
+NOTE: The data set XPTLIB.VS has 32473 observations and 21 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.03 seconds
+      cpu time            0.01 seconds
+      
+
+135       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+136       + libname xptlib xport "E:\out\testIpsen\DAC_XPT\wr.xpt";
+NOTE: Libref XPTLIB was successfully assigned as follows: 
+      Engine:        XPORT 
+21                                          The SAS System                  14:16 Monday, July 6, 2026
+
+      Physical Name: E:\out\testIpsen\DAC_XPT\wr.xpt
+137       + proc copy in=inlib out=xptlib memtype=data; select wr; run;
+
+NOTE: Copying INLIB.WR to XPTLIB.WR (memtype=DATA).
+NOTE: There were 0 observations read from the data set INLIB.WR.
+NOTE: The data set XPTLIB.WR has 0 observations and 0 variables.
+NOTE: PROCEDURE COPY used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.00 seconds
+      
+
+138       + libname xptlib clear;
+NOTE: Libref XPTLIB has been deassigned.
+NOTE: Libref INLIB has been deassigned.
+DEBUG: Conversion process completed
+
+NOTE: The file "E:\out\testIpsen\DAC_Logs\xpt_error_log.txt" is:
+      Filename=E:\out\testIpsen\DAC_Logs\xpt_error_log.txt,
+      RECFM=V,LRECL=32767,File Size (bytes)=3379,
+      Last Modified=06Jul2026:14:16:08,
+      Create Time=06Jul2026:14:16:08
+
+NOTE: 2 records were written to the file "E:\out\testIpsen\DAC_Logs\xpt_error_log.txt".
+      The minimum record length was 37.
+      The maximum record length was 40.
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
+
+
+NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
+NOTE: The SAS System used:
+      real time           4.14 seconds
+      cpu time            2.12 seconds
+      
