@@ -204,16 +204,17 @@ quit;
 
 /* 7) Create error report */
 data _null_;
-    length dt $20;
+    length dt $20 cnt $10;
     file errlog;
     dt = put(datetime(), datetime20.);
+    cnt = symget('_export_err_count');
 
     put "SAS Error Report";
     put "Generated: " dt;
     put "----------------------------------------";
 
     if symget('_export_err_count') ne '0' then do;
-        put "Warnings: " symget('_export_err_count') " dataset(s) skipped due to no variables defined.";
+        put "Warnings: " cnt " dataset(s) skipped due to no variables defined.";
         put "Check the SAS log for details (search for WARNING: Skipping).";
     end;
     else do;
